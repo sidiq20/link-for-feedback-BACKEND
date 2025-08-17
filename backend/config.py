@@ -10,26 +10,21 @@ load_dotenv()
 
 class Config:
     
-    # Flask configuration
     SECRET_KEY = os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production')
     DEBUG = os.getenv('FLASK_ENV') == 'development'
     
-    # MongoDB configuration
     
     MONGO_URI = os.getenv('MONGO_URI')
     MONGO_DB = os.getenv('MONGO_DB', 'feedback_app')
     
     
-    # Session configuration
     SESSION_PERMANENT = False
     SESSION_TYPE = 'filesystem'
     PERMANENT_SESSION_LIFETIME = timedelta(hours=24)
     
-    # Rate limiting configuration
     RATELIMIT_STORAGE_URL = os.getenv('REDIS_URL')
     
-    # Security settings
-    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  # 16MB max file size
+    MAX_CONTENT_LENGTH = 16 * 1024 * 1024  
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None
     

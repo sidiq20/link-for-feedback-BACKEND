@@ -7,9 +7,6 @@ from backend.extensions import mongo
 
 
 class FeedbackLink:
-    """Model for feedback collection links (PyMongo version)"""
-
-    # COLLECTION = mongo.db.feedback_links
     
     @staticmethod
     def _collection():
@@ -17,26 +14,21 @@ class FeedbackLink:
 
     @staticmethod
     def generate_unique_slug(base_name):
-        """Generate a unique slug based on the link name"""
-        # Clean base name
         slug_base = ''.join(c for c in base_name.lower() if c.isalnum() or c in '-_')[:50]
         slug_base = slug_base.strip('-_')
 
         if not slug_base:
             slug_base = 'feedback'
 
-        # Check if base slug exists
         if not FeedbackLink._collection().find_one({"slug": slug_base}):
             return slug_base
 
-        # Generate with random suffix
         for _ in range(100):
             random_suffix = ''.join(secrets.choice(string.ascii_lowercase + string.digits) for _ in range(6))
             unique_slug = f"{slug_base}-{random_suffix}"
             if not FeedbackLink._collection().find_one({"slug": unique_slug}):
                 return unique_slug
 
-        # Fallback to timestamp
         timestamp = str(int(datetime.utcnow().timestamp()))
         return f"{slug_base}-{timestamp}"
     

@@ -18,7 +18,6 @@ def verify_token(token, secret_key, salt, max_age=3600):
 def validate_email(email):
     """Validate email address format"""
     try:
-        # Validate and get normalized email
         valid = email_validate(email)
         return True, valid.email
     except EmailNotValidError:
@@ -42,10 +41,8 @@ def sanitize_input(text, max_length=None):
     if not text:
         return ""
     
-    # Strip whitespace and escape HTML
     sanitized = html.escape(str(text).strip())
     
-    # Limit length if specified
     if max_length and len(sanitized) > max_length:
         sanitized = sanitized[:max_length]
     
@@ -66,14 +63,12 @@ def validate_feedback_data(data):
     """Validate complete feedback submission data"""
     errors = {}
     
-    # Validate name
     name = data.get('name', '').strip()
     if not name:
         errors['name'] = 'Name is required'
     elif len(name) > 255:
         errors['name'] = 'Name must be less than 255 characters'
     
-    # Validate email
     email = data.get('email', '').strip()
     if not email:
         errors['email'] = 'Email is required'
@@ -82,16 +77,13 @@ def validate_feedback_data(data):
         if not is_valid:
             errors['email'] = 'Invalid email format'
         else:
-            # Store the normalized email for use
             data['email'] = normalized_email
     
-    # Validate rating
     rating = data.get('rating')
     is_valid_rating, rating_value = validate_rating(rating)
     if not is_valid_rating:
         errors['rating'] = 'Rating must be between 1 and 5'
     
-    # Validate comment
     comment = data.get('comment', '').strip()
     if not comment:
         errors['comment'] = 'Comment is required'

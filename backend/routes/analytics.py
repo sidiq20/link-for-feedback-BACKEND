@@ -15,18 +15,14 @@ def get_db():
 @analytics_bp.route("/overview", methods=["GET"])
 @jwt_required
 def analytics_overview():
-    """Basic overview analytics for the authenticated user"""
     try:
         db = get_db()
         user_id = ObjectId(request.user_id)
 
-        # Count feedback links
         links_count = db.feedback_links.count_documents({"owner": user_id})
 
-        # Count total feedback entries across all links
         feedback_count = db.feedback.count_documents({"owner": user_id})
 
-        # Count active links
         active_links = db.feedback_links.count_documents({"owner": user_id, "is_active": True})
 
         return jsonify({
@@ -43,7 +39,6 @@ def analytics_overview():
 @analytics_bp.route("/feedback-trend", methods=["GET"])
 @jwt_required
 def feedback_trend():
-    """Feedback trend (last 30 days by default)"""
     try:
         db = get_db()
         user_id = ObjectId(request.user_id)
@@ -73,7 +68,6 @@ def feedback_trend():
 @analytics_bp.route("/link/<link_id>", methods=["GET"])
 @jwt_required
 def link_analytics(link_id):
-    """Analytics for a specific feedback link"""
     try:
         db = get_db()
         user_id = ObjectId(request.user_id)

@@ -17,7 +17,6 @@ def get_db():
     return current_app.mongo.db
 
 
-# --- Public feedback submission ---
 @feedback_bp.route("/submit/<slug>", methods=["POST"])
 def submit_feedback(slug):
     try:
@@ -61,7 +60,6 @@ def submit_feedback(slug):
         return jsonify({"error": "Failed to submit feedback"}), 500
 
 
-# --- Authenticated: Get feedback for a link ---
 @feedback_bp.route("/link/<link_id>", methods=["GET"])
 @api_rate_limit()
 @jwt_required
@@ -123,7 +121,6 @@ def get_link_feedback(link_id):
         return jsonify({"error": "Failed to get feedback"}), 500
 
 
-# --- Authenticated: Get feedback detail ---
 @feedback_bp.route("/<feedback_id>", methods=["GET"])
 @jwt_required
 def get_feedback_detail(feedback_id):
@@ -143,8 +140,6 @@ def get_feedback_detail(feedback_id):
         logger.exception(f"Get feedback detail error: {e}")
         return jsonify({"error": "Failed to get feedback details"}), 500
 
-
-# --- Authenticated: Delete feedback ---
 @feedback_bp.route("/<feedback_id>", methods=["DELETE"])
 @api_rate_limit()
 @jwt_required
@@ -173,7 +168,6 @@ def delete_feedback(feedback_id):
         return jsonify({"error": "Failed to delete feedback"}), 500
 
 
-# --- Public: Get latest feedback ---
 @feedback_bp.route("/public/<slug>", methods=["GET"])
 def get_public_feedback(slug):
     try:

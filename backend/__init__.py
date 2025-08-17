@@ -18,22 +18,17 @@ mongo = PyMongo()
 def create_app():
     app = Flask(__name__)
 
-    # Load configuration from Config class
     app.config.from_object(Config)
 
-    # Ensure MONGO_URI is set
     if not app.config.get('MONGO_URI'):
         raise RuntimeError("MONGO_URI not set in the environment or config")
 
-    # Test connection
     test_mongo_connection(app.config['MONGO_URI'])
 
-    # Initialize PyMongo
     mongo.init_app(app, uri=f"{app.config['MONGO_URI']}/{app.config['MONGO_DB']}")
 
     app.mongo = mongo
 
-    # Mail config
     app.config['MAIL_SERVER'] = 'smtp.gmail.com'
     app.config['MAIL_PORT'] = 587
     app.config['MAIL_USE_TLS'] = True
@@ -42,7 +37,6 @@ def create_app():
     app.config['MAIL_DEFAULT_SENDER'] = os.getenv('SEND_EMAIL')
     mail.init_app(app)
 
-    # Session config
     app.config["SESSION_TYPE"] = "redis"
     app.config["SESSION_REDIS"] = Redis.from_url(f"redis://{os.getenv('REDIS_URL')}")
     app.config['SESSION_PERMANENT'] = False
@@ -58,17 +52,14 @@ def create_app():
         return str(uuid.uuid4()).hex
     app.session_interface.generate_sid = generate_session_id
 
-    # Limiter
     limiter.init_app(app)
     app.extensions["limiter"] = limiter
 
-    # Logging
     logging.basicConfig(
         level=logging.DEBUG,
         format='%(asctime)s %(levelname)s %(name)s %(message)s'
     )
 
-    # Swagger docs
     swagger_config = {
         "headers": [],
         "specs": [
@@ -85,7 +76,6 @@ def create_app():
     }
     Swagger(app, config=swagger_config)
 
-    # Blueprints
     from backend.routes.auth import auth_bp
     from backend.routes.feedback_links import feedback_links_bp
     from backend.routes.feedback import feedback_bp
@@ -96,7 +86,6 @@ def create_app():
     app.register_blueprint(feedback_bp, url_prefix='/api/feedback')
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
 
-    # Error handlers
     @app.errorhandler(404)
     def not_found(error):
         return {'error': 'Resource not found'}, 404
