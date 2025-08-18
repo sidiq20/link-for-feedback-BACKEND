@@ -35,7 +35,6 @@ class FeedbackLink:
 
     @staticmethod
     def create(name, owner_id, description=None, is_active=True):
-        """Create a new feedback link"""
         slug = FeedbackLink.generate_unique_slug(name)
         now = datetime.utcnow()
         doc = {
@@ -54,12 +53,10 @@ class FeedbackLink:
 
     @staticmethod
     def find_by_slug(slug):
-        """Find a feedback link by its slug"""
         return FeedbackLink._collection().find_one({"slug": slug})
 
     @staticmethod
     def find_by_id(link_id):
-        """Find a feedback link by ID"""
         try:
             return FeedbackLink._collection().find_one({"_id": ObjectId(link_id)})
         except:
@@ -67,7 +64,6 @@ class FeedbackLink:
 
     @staticmethod
     def increment_submission_count(link_id):
-        """Increment the submission count and update updated_at"""
         return FeedbackLink._collection().update_one(
             {"_id": ObjectId(link_id)},
             {
@@ -78,7 +74,6 @@ class FeedbackLink:
 
     @staticmethod
     def to_dict(doc):
-        """Convert MongoDB document to dictionary"""
         if not doc:
             return None
         return {
