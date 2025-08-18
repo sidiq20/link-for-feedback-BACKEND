@@ -1,5 +1,6 @@
 from flask import Flask
 from flask_session import Session
+from flask_cors import CORS
 from datetime import timedelta
 import logging
 from .config import Config, test_mongo_connection
@@ -17,6 +18,7 @@ mongo = PyMongo()
 
 def create_app():
     app = Flask(__name__)
+    CORS(app, origins=['http://localhost:5173', 'http://127.0.0.1:5173'])
 
     app.config.from_object(Config)
 
