@@ -32,7 +32,7 @@ def submit_anonymous(slug):
     
     return jsonify({"message": "Message submitted", "id": str(anon["_id"])}), 201
 
-@anonymous_bp.route("/link/<link_id>", methods=["GET"])
+@anonymous_bp.route("/message/<message_id>", methods=["GET"])
 @jwt_required
 def get_message_detail(message_id):
     msg = ANONYMOUS.find_by_id(message_id)
@@ -65,6 +65,7 @@ def delete_message(message_id):
     return jsonify({"message": "Message deleted"}), 200
 
 @anonymous_bp.route("/public/<slug>", methods=["GET"])
+@jwt_required
 def get_public_messages(slug):
     link = ANONYMOUSLINK.find_by_slug(slug)
     if not link or not link.get("is_active", True):

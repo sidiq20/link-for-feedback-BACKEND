@@ -2,13 +2,13 @@ from datetime import datetime
 import secrets
 import string
 from bson import ObjectId
-from backend.extensions import mongo
+from flask import current_app
 
 
 class ANONYMOUSLINK:
     @staticmethod
     def _collection():
-        return mongo.db.anonymous_links
+        return current_app.mongo.db.anonymous_links
     
     @staticmethod
     def generate_unique_slug(base_name):

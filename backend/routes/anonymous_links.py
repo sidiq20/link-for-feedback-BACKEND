@@ -8,7 +8,7 @@ import logging
 anonymous_links_bp = Blueprint("anonymous_links", __name__)
 logger = logging.getLogger(__name__)
 
-@anonymous_links_bp.route("", methods=["POST"]) 
+@anonymous_links_bp.route("/create", methods=["POST"]) 
 @jwt_required
 def create_link():
     data = request.get_json() or {}
@@ -26,11 +26,36 @@ def create_link():
     
     return jsonify({"message": "Anonymous link created", "link": ANONYMOUSLINK.to_dict(link)}), 201
 
-@anonymous_links_bp.route("/<link_id>", methods=["GET"])
-@jwt_required
-def get_links():
-    links = list(ANONYMOUSLINK._collection().find({"owner_id": ObjectId(request.user_id)}))
-    return jsonify([ANONYMOUSLINK.to_dict(link) for link in links]), 200
+@anonymous_links_bp.route("/id/<link_id>", methods=["GET"])
+def get_link(link_id):
+    link = ANONYMOUSLINK.find_by_id(link_id)
+    if not link or not link.get("is_acitve", True):
+        return jsonify({"error": "Anonymous link not found"}), 404
+    
+    public_data = {
+        "name": link.get("name"),
+        "slug": link.get("slug"),
+        "dexription": link.get("description"),
+        "created_at": link.get("created_at").isoformat() if link.get("created_at") else None,
+        "is_active": link.get("is_active", True)
+    }
+    return jsonify(public_data), 200
+
+
+@anonymous_links_bp.route("/slug/<slug>", methods=["GET"])
+def get_public_link(slug):
+    link = ANONYMOUSLINK.find_by_slug(slug)
+    if not link or not link.get("is_active", True):
+        return jsonify({"error": "Anonymous link not found"}), 404
+
+    public_data = {
+        "name": link.get("name"),
+        "slug": link.get("slug"),
+        "description": link.get("description"),
+        "created_at": link.get("created_at").isoformat() if link.get("created_at") else None,
+        "is_active": link.get("is_active", True)
+    }
+    return jsonify(public_data), 200
 
 
 @anonymous_links_bp.route("/<link_id>", methods=["PUT"])
@@ -51,7 +76,7 @@ def update_link(link_id):
         {"$set": update_data}
     )
     
-    if result.mathed_count == 0:
+    if result.matched_count == 0:
         return jsonify({"error": "Link not found or access denied"}), 404 
     
     return jsonify({"message": "anonymous link updated"}), 200

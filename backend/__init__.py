@@ -82,11 +82,15 @@ def create_app():
     from backend.routes.feedback_links import feedback_links_bp
     from backend.routes.feedback import feedback_bp
     from backend.routes.analytics import analytics_bp
+    from backend.routes.anonymous import anonymous_bp
+    from backend.routes.anonymous_links import anonymous_links_bp
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(feedback_links_bp, url_prefix='/api/links')
     app.register_blueprint(feedback_bp, url_prefix='/api/feedback')
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
+    app.register_blueprint(anonymous_links_bp, url_prefix='/api/anonymous-links')
+    app.register_blueprint(anonymous_bp, url_prefix='/api/anonymous')
 
     @app.errorhandler(404)
     def not_found(error):
