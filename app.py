@@ -2,9 +2,12 @@
 import os
 from backend import create_app
 from dotenv import load_dotenv
+from backend.config import ensure_ttl_indexes
 
 load_dotenv()
 app = create_app()
+
+ensure_ttl_indexes(app.mongo)
 
 if __name__ == "__main__":
     host = os.environ.get('FLASK_HOST', '0.0.0.0')
