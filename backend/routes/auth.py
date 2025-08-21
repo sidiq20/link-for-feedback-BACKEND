@@ -65,10 +65,11 @@ def register():
     try:
         data = request.get_json() or {}
         email = data.get("email", "").strip().lower()
+        name = data.get("name", "").strip()
         password = data.get("password", "")
 
-        if not all([email, password]):
-            return jsonify({"error": "Email and password are required"}), 400
+        if not all([name, email, password]):
+            return jsonify({"error": "Email, name and password are required"}), 400
 
         is_valid_email, normalized_email = validate_email(email)
         if not is_valid_email:
@@ -86,6 +87,7 @@ def register():
 
         user_doc = {
             "email": email,
+            "name": name,
             "password": generate_password_hash(password),
             "is_active": True,
             "created_at": datetime.utcnow(),
@@ -98,7 +100,8 @@ def register():
             "message": "Registration successful",
             "user": {
                 "_id": str(result.inserted_id),
-                "email": email
+                "email": email,
+                "name": name
             }
         }), 201
 
