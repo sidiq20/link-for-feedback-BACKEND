@@ -86,7 +86,7 @@ def register():
         if db.users.find_one({"email": email}):
             return jsonify({"error": "User already exists"}), 400
         
-        if db.users.fine_one({"name": name}):
+        if db.users.find_one({"name": name}):
             return jsonify({"error": "Username already exists"}), 400
 
         user_doc = {
@@ -119,6 +119,7 @@ def register():
     except Exception:
         logger.exception("Registration error")
         return jsonify({"error": "Registration failed"}), 500
+
 
 
 @auth_bp.route("/login", methods=["POST"])
