@@ -114,16 +114,23 @@ def register():
 def login():
     try:
         data = request.get_json() or {}
-        email = data.get("email", "").strip().lower()
+        identifier = data.get("email", "").strip().lower()
         password = data.get("password", "")
 
-        if not all([email, password]):
+        if not all([identifier, password]):
             return jsonify({"error": "Email and password are required"}), 400
 
         db = get_db()
-        user = db.users.find_one({"email": email, "is_active": True})
+
+        query = {"is_active": True}
+        if "@" in identifier:
+            query["email"] = identifier
+        else:
+            query["username"] = identifier
+            
+        user = db.users.find_one(query)
         if not user or not check_password_hash(user["password"], password):
-            return jsonify({"error": "Invalid credentials"}), 401
+            return jsonify({"error": "Invalid email or password"}), 401
 
         refresh_token = str(uuid.uuid4())
         db.refresh_tokens.insert_one({
@@ -134,14 +141,16 @@ def login():
         })
 
         access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in=900)  
-        logger.info(f"User logged in: {email}")
+        logger.info(f"User logged in: {identifier}")
         return jsonify({
             "message": "Login successful",
             "access_token": access_token,
             "refresh_token": refresh_token,
             "user": {
                 "_id": str(user["_id"]),
-                "email": user["email"]
+                "email": user["email"],
+                "name": user.get("name"),
+                
             }
         }), 200
 
