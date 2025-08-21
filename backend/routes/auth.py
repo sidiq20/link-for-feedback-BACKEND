@@ -116,9 +116,10 @@ def register():
             return jsonify({"error": "Username already exists"}), 400
         return jsonify({"error": "Duplicate key error"}), 400
 
-    except Exception:
+    except Exception as e:
         logger.exception("Registration error")
-        return jsonify({"error": "Registration failed"}), 500
+        return jsonify({"error": f"Registration failed: {str(e)}"}), 500
+
 
 
 
@@ -138,7 +139,7 @@ def login():
         if "@" in identifier:
             query["email"] = identifier
         else:
-            query["username"] = identifier
+            query["name"] = identifier
             
         user = db.users.find_one(query)
         if not user or not check_password_hash(user["password"], password):
