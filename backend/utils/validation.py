@@ -37,7 +37,7 @@ def validate_password(password):
     return True, "Password is valid"
 
 def sanitize_input(text, max_length=None):
-    """Sanitize input length, don't escape for DB storage"""
+    """Only trim and limit length. Escape later at render time."""
     if not text:
         return ""
     
