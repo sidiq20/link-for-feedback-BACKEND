@@ -28,16 +28,28 @@ class Config:
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None
     
-    MAIL_SERVER = os.getenv('SMTP_SERVER')
-    MAIL_PORT = os.getenv('PORT')
-    SEND_EMAIL = os.getenv('SEND_EMAIL')
-    SMTP_PASS = os.getenv('SMTP_PASS')  
-    SECRET_KEY = str(os.getenv('SECRET_KEY', 'dev-secret-key-change-in-production'))
-    SESSION_COOKIE_NAME = str(os.getenv('SESSION_COOKIE_NAME', 'session'))
+    MAIL_SERVER = "smtp.gmail.com"
+    MAIL_PORT = 465
+    MAIL_USE_SSL = True
+    MAIL_USE_TLS = False
+    MAIL_USERNAME = os.getenv("SEND_EMAIL")
+    MAIL_PASSWORD = os.getenv("SMTP_PASS")
+    MAIL_DEFAULT_SENDER = os.getenv("SEND_EMAIL")
+
 
     
     SECURITY_PASSWORD_SALT = os.getenv('SALT')
     
+def ensure_ttl_indexes(mongo):
+    mongo.db.anonymous.create_index(
+        [("submitted_at", 1)],
+        expireAfterSeconds=7 * 24 * 60 * 60,
+    )
+    
+    mongo.db.anonymous_links.create_index(
+        [("created_at", 1)],
+        expireAfterSeconds=7 * 24 * 60 * 60,
+    )
     
 def test_mongo_connection(uri):
     try:
@@ -47,4 +59,3 @@ def test_mongo_connection(uri):
     except ConnectionFailure as e:
         print(f"Mongo connection failed: {e}")
         raise e
-    

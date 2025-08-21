@@ -79,3 +79,32 @@ def get_public_messages(slug):
             "description": link.get("description")
         }
     }), 200
+    
+@anonymous_bp.route("/list", methods=["GET"])
+@jwt_required
+def list_messages():
+    user_id = ObjectId(request.user_id)
+
+    user_links = list(ANONYMOUSLINK._collection().find({"owner_id": user_id}))
+    link_map = {link["_id"]: link for link in user_links} 
+
+    link_ids = list(link_map.keys())
+    messages = []
+    if link_ids:
+        cursor = ANONYMOUS._collection().find(
+            {"anonymous_link_id": {"$in": link_ids}}
+        ).sort("submitted_at", -1)
+        messages = list(cursor)
+
+    results = []
+    for m in messages:
+        msg_dict = ANONYMOUS.to_dict(m)
+        link = link_map.get(m["anonymous_link_id"])
+        if link:
+            msg_dict["link_name"] = link.get("name", "Unnamed Link")
+        else:
+            msg_dict["link_name"] = "Unknown Link"
+
+        results.append(msg_dict)
+
+    return jsonify({"messages": results}), 200

@@ -16,6 +16,66 @@ logger = logging.getLogger(__name__)
 def get_db():
     return current_app.mongo.db
 
+@feedback_bp.route("/list", methods=["GET"])
+@jwt_required
+def get_user_feedback():
+    try:
+        db = get_db()
+        page = max(int(request.args.get("page", 1)), 1)
+        per_page = min(int(request.args.get("per_page", 10)), 50)
+        
+        # Get user's feedback links first
+        user_links = list(db.feedback_links.find(
+            {"owner": ObjectId(request.user_id)}, 
+            {"_id": 1, "name": 1}
+        ))
+        
+        if not user_links:
+            return jsonify({
+                "feedback": [],
+                "pagination": {
+                    "page": page,
+                    "per_page": per_page,
+                    "total": 0,
+                    "pages": 0,
+                    "has_prev": False,
+                    "has_next": False
+                }
+            }), 200
+        
+        link_ids = [link["_id"] for link in user_links]
+        link_names = {str(link["_id"]): link["name"] for link in user_links}
+        
+        feedback_cursor = Feedback.get_collection().find(
+            {"feedback_link_id": {"$in": link_ids}}
+        ).sort("submitted_at", -1).skip((page - 1) * per_page).limit(per_page)
+        
+        feedback_items = []
+        for fb in feedback_cursor:
+            fb_dict = Feedback.to_dict(fb)
+            fb_dict["link_name"] = link_names.get(str(fb["feedback_link_id"]), "Unknown")
+            feedback_items.append(fb_dict)
+        
+        total = Feedback.get_collection().count_documents(
+            {"feedback_link_id": {"$in": link_ids}}
+        )
+        
+        return jsonify({
+            "feedback": feedback_items,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "pages": (total + per_page - 1) // per_page,
+                "has_prev": page > 1,
+                "has_next": page * per_page < total
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Get user feedback error: {str(e)}")
+        return jsonify({"error": "Failed to get feedback"}), 500
+
 
 @feedback_bp.route("/submit/<slug>", methods=["POST"])
 def submit_feedback(slug):

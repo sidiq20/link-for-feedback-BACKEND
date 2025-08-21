@@ -215,7 +215,7 @@ def forgot_password():
             send_email(
                 subject="Reset Your Password",
                 recipients=[email],
-                body="""
+                body=f"""
                 Hi there,
 
                 We received a request to reset the password for your account.
@@ -223,14 +223,16 @@ def forgot_password():
                 Click the link below to reset your password:
                 {reset_url}
 
-                If you did not request this change, you can safely ignore this email — your password will remain unchanged.
+                If you did not request this change, you can safely ignore this email — 
+                your password will remain unchanged.
 
                 For security reasons, this link will expire in 30 minutes.
 
                 Thanks,
-                The [Your Company Name] Team
-                """.format(reset_url=reset_url)
+                The Feedback App Team
+                """
             )
+
 
 
 

@@ -8,6 +8,40 @@ import logging
 anonymous_links_bp = Blueprint("anonymous_links", __name__)
 logger = logging.getLogger(__name__)
 
+@anonymous_links_bp.route("/list", methods=["GET"])
+@jwt_required
+def get_user_anonymous_links():
+    try:
+        page = max(int(request.args.get("page", 1)), 1)
+        per_page = min(int(request.args.get("per_page", 10)), 50)
+        
+        links_cursor = ANONYMOUSLINK._collection().find(
+            {"owner_id": ObjectId(request.user_id)}
+        ).sort("created_at", -1).skip((page - 1) * per_page).limit(per_page)
+        
+        links = []
+        for link in links_cursor:
+            link_dict = ANONYMOUSLINK.to_dict(link)
+            links.append(link_dict)
+        
+        total = ANONYMOUSLINK._collection().count_documents({"owner_id": ObjectId(request.user_id)})
+        
+        return jsonify({
+            "links": links,
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "pages": (total + per_page - 1) // per_page,
+                "has_prev": page > 1,
+                "has_next": page * per_page < total
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.error(f"Get anonymous links error: {str(e)}")
+        return jsonify({"error": "Failed to get anonymous links"}), 500
+
 @anonymous_links_bp.route("/create", methods=["POST"]) 
 @jwt_required
 def create_link():
@@ -84,12 +118,22 @@ def update_link(link_id):
 @anonymous_links_bp.route("/<link_id>", methods=["DELETE"])
 @jwt_required
 def delete_link(link_id):
-    result = ANONYMOUSLINK._collection().update_one(
+    # First check if link exists and user owns it
+    link = ANONYMOUSLINK._collection().find_one(
         {"_id": ObjectId(link_id), "owner_id": ObjectId(request.user_id)},
-        {"$set": {"is_active": False}}
     )
     
-    if result.matched_count == 0:
+    if not link:
         return jsonify({"error": "Link not found or access denied"}), 404
     
-    return jsonify({"message": "anonymous link detected"}), 200
+    # Delete all messages associated with this link
+    from backend.models.anonymous import ANONYMOUS
+    ANONYMOUS._collection().delete_many({"anonymous_link_id": ObjectId(link_id)})
+    
+    # Delete the link itself
+    result = ANONYMOUSLINK._collection().delete_one({"_id": ObjectId(link_id)})
+    
+    if result.deleted_count == 0:
+        return jsonify({"error": "Link not found or access denied"}), 404
+    
+    return jsonify({"message": "Link deleted successfully"}), 200

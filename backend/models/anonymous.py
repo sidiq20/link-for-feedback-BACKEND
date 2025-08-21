@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 from bson import ObjectId 
 from flask import current_app
+from backend.models.anonymous_links import ANONYMOUSLINK
 
 class ANONYMOUS:
     COLLECTION = "anonymous"
@@ -10,12 +11,16 @@ class ANONYMOUS:
         return current_app.mongo.db[ANONYMOUS.COLLECTION]
     
     @staticmethod
+    def _collection():
+        return current_app.mongo.db[ANONYMOUS.COLLECTION]
+    
+    @staticmethod
     def create(anonymous_link_id, message, ip_address=None, user_agent=None):
         doc = {
             "anonymous_link_id": ObjectId(anonymous_link_id),
             "comment": message,
             "submitted_at": datetime.utcnow(),
-            "ip_adress": ip_address,
+            "ip_address": ip_address,
             "user_agent": user_agent
         }
         result = ANONYMOUS.get_collection().insert_one(doc)
@@ -48,15 +53,23 @@ class ANONYMOUS:
     def to_dict(doc):
         if not doc:
             return None
+
+        link_name = "Unknown Link"
+        try:
+            link = ANONYMOUSLINK._collection().find_one({"_id": doc["anonymous_link_id"]})
+            if link:
+                link_name = link.get("name", "Unnamed Link")
+        except Exception:
+            pass
+
         return {
             "id": str(doc["_id"]),
             "anonymous_link_id": str(doc["anonymous_link_id"]),
-            "comment": doc.get("comment"),
-            "submitted_at": (
-                doc["submitted_at"].isoformat()
-                if isinstance(doc["submitted_at"], datetime)
-                else str(doc["submitted_at"])
-            )
+            "link_name": link_name,  # ✅ Always include the link name
+            "message": doc.get("comment"),
+            "ip_address": doc.get("ip_address"),
+            "user_agent": doc.get("user_agent"),
+            "submitted_at": doc.get("submitted_at").isoformat() if doc.get("submitted_at") else None,
         }
         
     @staticmethod

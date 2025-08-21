@@ -12,29 +12,6 @@ def get_db():
     return current_app.mongo.db
 
 
-@analytics_bp.route("/overview", methods=["GET"])
-@jwt_required
-def analytics_overview():
-    try:
-        db = get_db()
-        user_id = ObjectId(request.user_id)
-
-        links_count = db.feedback_links.count_documents({"owner": user_id})
-
-        feedback_count = db.feedback.count_documents({"owner": user_id})
-
-        active_links = db.feedback_links.count_documents({"owner": user_id, "is_active": True})
-
-        return jsonify({
-            "links_count": links_count,
-            "active_links": active_links,
-            "feedback_count": feedback_count
-        }), 200
-
-    except Exception as e:
-        logger.exception("Overview analytics error")
-        return jsonify({"error": "Failed to fetch analytics"}), 500
-
 
 @analytics_bp.route("/feedback-trend", methods=["GET"])
 @jwt_required
@@ -99,3 +76,51 @@ def link_analytics(link_id):
     except Exception as e:
         logger.exception("Link analytics error")
         return jsonify({"error": "Failed to fetch link analytics"}), 500
+
+@analytics_bp.route("/overview", methods=["GET"])
+@jwt_required
+def analytics_overview():
+    try:
+        db = get_db()
+        user_id = ObjectId(request.user_id)
+
+        # Count feedback links
+        links_count = db.feedback_links.count_documents({"owner": user_id})
+        active_links = db.feedback_links.count_documents({"owner": user_id, "is_active": True})
+
+        # Get user's feedback link IDs
+        user_links = list(db.feedback_links.find({"owner": user_id}, {"_id": 1}))
+        link_ids = [link["_id"] for link in user_links]
+
+        # Count feedback messages
+        from backend.models.feedback import Feedback
+        feedback_count = Feedback.get_collection().count_documents(
+            {"feedback_link_id": {"$in": link_ids}}
+        ) if link_ids else 0
+
+        # Count anonymous links
+        from backend.models.anonymous_links import ANONYMOUSLINK
+        from backend.models.anonymous import ANONYMOUS
+
+        anonymous_links_count = ANONYMOUSLINK._collection().count_documents({"owner_id": user_id})
+
+        # Get user's anonymous link IDs
+        user_anon_links = list(ANONYMOUSLINK._collection().find({"owner_id": user_id}, {"_id": 1}))
+        anon_link_ids = [link["_id"] for link in user_anon_links]
+
+        # Count anonymous messages
+        anonymous_messages_count = ANONYMOUS._collection().count_documents(
+            {"anonymous_link_id": {"$in": anon_link_ids}}
+        ) if anon_link_ids else 0
+
+        return jsonify({
+            "links_count": links_count,
+            "active_links": active_links,
+            "feedback_count": feedback_count,
+            "anonymous_links_count": anonymous_links_count,
+            "anonymous_messages_count": anonymous_messages_count
+        }), 200
+
+    except Exception as e:
+        logger.exception("Overview analytics error")
+        return jsonify({"error": "Failed to fetch analytics"}), 500

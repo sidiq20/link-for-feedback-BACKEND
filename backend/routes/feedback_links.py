@@ -193,13 +193,31 @@ def delete_link(link_id):
 
     try:
         db = current_app.mongo.db
-        result = db.feedback_links.update_one(
-            {"_id": ObjectId(link_id), "owner": ObjectId(request.user_id)},
+
+        # First check if link exists and user owns it
+        link = db.feedback_links.find_one({
+            "_id": ObjectId(link_id),
+            "owner": ObjectId(request.user_id)
+        })
+
+        if not link:
+            return jsonify({"error": "Link not found or access denied"}), 404
+
+        # Mark the link inactive
+        db.feedback_links.update_one(
+            {"_id": ObjectId(link_id)},
             {"$set": {"is_active": False}}
         )
 
-        if result.matched_count == 0:
-            return jsonify({"error": "Link not found or access denied"}), 404
+        # Delete all feedback associated with this link
+        from backend.models.feedback import Feedback
+        Feedback.get_collection().delete_many({"feedback_link_id": ObjectId(link_id)})
+
+        # Delete the link itself
+        result = db.feedback_links.delete_one({"_id": ObjectId(link_id)})
+
+        if result.deleted_count == 0:
+            return jsonify({"error": "Link not found or already deleted"}), 404
 
         logger.info(f"Feedback link deleted: {link_id}")
         return jsonify({"message": "Feedback link deleted successfully"}), 200

@@ -61,6 +61,7 @@ def create_app():
         level=logging.DEBUG,
         format='%(asctime)s %(levelname)s %(name)s %(message)s'
     )
+    
 
     swagger_config = {
         "headers": [],
