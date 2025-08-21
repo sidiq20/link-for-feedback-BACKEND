@@ -71,12 +71,11 @@ def ensure_ttl_indexes(mongo):
     Ensure indexes exist for collections (TTL + unique).
     """
     db = mongo.db
-
-    # Example: feedback TTL index
+    if "anonymous" in db.list_collection_names():
+        db.anonymous.create_index("submitted_at", expireAfterSeconds=60*60*24*7)
     if "feedback" in db.list_collection_names():
-        db.feedback.create_index("created_at", expireAfterSeconds=60*60*24*30)  # 30 days
+        db.feedback.create_index("created_at", expireAfterSeconds=60*60*24*30)
 
-    # Users collection unique indexes
     if "users" in db.list_collection_names():
         db.users.create_index([("email", ASCENDING)], unique=True, name="unique_email")
         db.users.create_index([("name", ASCENDING)], unique=True, name="unique_name")
