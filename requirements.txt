@@ -1,6 +1,7 @@
 Flask==2.3.3
 Flask-Session==0.5.0
 pymongo==4.5.0
+mongoengine==0.27.0
 bcrypt==4.0.1
 email-validator==2.0.0
 python-dotenv==1.0.0
