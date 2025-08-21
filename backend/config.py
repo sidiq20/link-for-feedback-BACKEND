@@ -63,8 +63,8 @@ def test_mongo_connection(uri):
     
     
 def ensure_unique_indexes(mongo):
-    mongo.db.users.create_index("email", unique=True)
-    mongo.db.users.create_index("name", unique=True)
+    mongo.db.users.create_index("email", unique=True, name="unique_email")
+    mongo.db.users.create_index("name", unique=True, name="unique_name")
     
 def ensure_ttl_indexes(mongo):
     """
