@@ -37,16 +37,17 @@ def validate_password(password):
     return True, "Password is valid"
 
 def sanitize_input(text, max_length=None):
-    """Sanitize user input to prevent XSS"""
+    """Sanitize input length, don't escape for DB storage"""
     if not text:
         return ""
     
-    sanitized = html.escape(str(text).strip())
+    sanitized = str(text).strip()
     
     if max_length and len(sanitized) > max_length:
         sanitized = sanitized[:max_length]
     
     return sanitized
+
 
 def validate_rating(rating):
     """Validate rating is between 1 and 5"""
