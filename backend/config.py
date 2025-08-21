@@ -5,6 +5,7 @@ import mongoengine
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from flask_session import Session
+from pymongo import ASCENDING
 
 load_dotenv()
 
@@ -59,3 +60,23 @@ def test_mongo_connection(uri):
     except ConnectionFailure as e:
         print(f"Mongo connection failed: {e}")
         raise e
+    
+    
+def ensure_unique_indexes(mongo):
+    mongo.db.users.create_index("email", unique=True)
+    mongo.db.users.create_index("name", unique=True)
+    
+def ensure_ttl_indexes(mongo):
+    """
+    Ensure indexes exist for collections (TTL + unique).
+    """
+    db = mongo.db
+
+    # Example: feedback TTL index
+    if "feedback" in db.list_collection_names():
+        db.feedback.create_index("created_at", expireAfterSeconds=60*60*24*30)  # 30 days
+
+    # Users collection unique indexes
+    if "users" in db.list_collection_names():
+        db.users.create_index([("email", ASCENDING)], unique=True, name="unique_email")
+        db.users.create_index([("name", ASCENDING)], unique=True, name="unique_name")

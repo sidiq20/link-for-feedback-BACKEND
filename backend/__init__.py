@@ -3,7 +3,7 @@ from flask_session import Session
 from flask_cors import CORS
 from datetime import timedelta
 import logging
-from .config import Config, test_mongo_connection
+from .config import Config, test_mongo_connection, ensure_ttl_indexes, ensure_unique_indexes
 from backend.extensions import limiter, mail
 from flasgger import Swagger
 from dotenv import load_dotenv
@@ -52,6 +52,9 @@ def create_app():
 
     def generate_session_id():
         return str(uuid.uuid4()).hex
+    ensure_ttl_indexes(app.mongo)
+    ensure_unique_indexes(app.mongo)
+    
     app.session_interface.generate_sid = generate_session_id
 
     limiter.init_app(app)

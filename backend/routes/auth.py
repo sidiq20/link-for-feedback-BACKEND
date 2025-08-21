@@ -4,6 +4,7 @@ from bson import ObjectId
 from bson.errors import InvalidId
 from datetime import datetime, timedelta
 from backend.middleware.auth import token_required
+from pymongo.errors import DuplicateKeyError
 import logging
 import jwt
 import uuid
@@ -83,7 +84,10 @@ def register():
         db = get_db()
 
         if db.users.find_one({"email": email}):
-            return jsonify({"error": "User already exists"}), 409
+            return jsonify({"error": "User already exists"}), 400
+        
+        if db.users.fine_one({"name": name}):
+            return jsonify({"error": "Username already exists"}), 400
 
         user_doc = {
             "email": email,
@@ -104,6 +108,13 @@ def register():
                 "name": name
             }
         }), 201
+        
+    except DuplicateKeyError as e:
+        if "email" in str(e):
+            return jsonify({"error": "Email already exists"}), 400
+        elif "name" in str(e):
+            return jsonify({"error": "Username already exists"}), 400
+        return jsonify({"error": "Duplicate key error"}), 400
 
     except Exception:
         logger.exception("Registration error")
