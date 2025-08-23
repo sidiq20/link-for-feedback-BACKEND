@@ -18,7 +18,7 @@ class FORM_RESPONSE:
             "submitted_at": datetime.utcnow()
         }
         result = FORM_RESPONSE.get_collection().insert_one(doc)
-        return str(result.insert_id)
+        return str(result.inserted_id)
        
     @staticmethod
     def get_by_form(form_id):
@@ -31,7 +31,7 @@ class FORM_RESPONSE:
         
         for response in responses:
             for ans in response["answers"]:
-                q = ans["question"]
+                q = ans["questions"]
                 a = ans["answer"]
                 
                 if isinstance(a, list):

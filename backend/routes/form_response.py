@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from backend.models.form_links import FORM_LINK
 from backend.models.forms import FORM
 from backend.models.form_responses import FORM_RESPONSE
+from backend import socketio
 
 form_response_bp = Blueprint("form_response", __name__)
 
@@ -22,6 +23,9 @@ def submit_response(slug):
     
     responder_ip = request.remote_addr
     responder_ip = FORM_RESPONSE.submit(str(form["_Id"]), answers, responder_ip)
+    
+    results = FORM_RESPONSE.get_poll_results(str(form["_id"]))
+    socketio.emit("form_update", {"form_id": str(form["_id"]), "results": results}, room=str(form["_id"]))
     
     return jsonify({"message": "Response submitted", "response_id": responder_ip})
 

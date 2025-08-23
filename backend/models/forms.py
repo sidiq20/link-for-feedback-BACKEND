@@ -10,17 +10,17 @@ class FORM:
         return current_app.mongo.db[FORM.COLLECTION]
     
     @staticmethod
-    def create(user_id, title, description, question):
+    def create(user_id, title, description, questions):
         doc = {
             "user_id": ObjectId(user_id),
             "title": title,
             "description": description,
-            "questions": question,
+            "questions": questions,
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
         result = FORM.get_collection().insert_one(doc)
-        return str(result.insert_id)
+        return str(result.inserted_id)
     
     @staticmethod
     def get_by_id(form_id):
@@ -28,11 +28,11 @@ class FORM:
     
     @staticmethod
     def get_by_user(user_id):
-        return FORM.get_collection().find_one({"_id": ObjectId(user_id)})
+        return FORM.get_collection().find({"user_id": ObjectId(user_id)})
     
     @staticmethod
     def update(form_id, update_data):
-        update_data["update_at"] = datetime.utcnow()
+        update_data["updated_at"] = datetime.utcnow()
         return FORM.get_collection().update_one(
             {"_id": ObjectId(form_id)},
             {"$set": update_data}

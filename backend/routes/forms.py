@@ -11,7 +11,7 @@ def create_form():
     data = request.get_json()
     title = data.get("title")
     description = data.get("description", "") 
-    questions = data.get("question", [])
+    questions = data.get("questions", [])
     
     if not title or not questions:
         return jsonify({"error": "Title and questions are required"}), 400 
