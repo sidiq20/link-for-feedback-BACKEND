@@ -12,9 +12,12 @@ from flask_pymongo import PyMongo
 import secrets
 import uuid
 from redis import Redis
+from flask_socketio import SocketIO
 
 load_dotenv()
 mongo = PyMongo()
+
+socketio = SocketIO(cors_allowed_origins="*")
 
 def create_app():
     app = Flask(__name__)
@@ -93,6 +96,8 @@ def create_app():
         "specs_route": "/apidocs/"
     }
     Swagger(app, config=swagger_config)
+    
+    socketio.init_app(app)
 
     from backend.routes.auth import auth_bp
     from backend.routes.feedback_links import feedback_links_bp

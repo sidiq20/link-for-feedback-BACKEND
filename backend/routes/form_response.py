@@ -1,0 +1,39 @@
+from flask import Blueprint, request, jsonify
+from backend.models.form_links import FORM_LINK
+from backend.models.forms import FORM
+from backend.models.form_responses import FORM_RESPONSE
+
+form_response_bp = Blueprint("form_response", __name__)
+
+@form_response_bp.route("/submit/<slug>", methods=["POST"])
+def submit_response(slug):
+    link = FORM_LINK.get_by_slug(slug)
+    if not link:
+        return jsonify({"error": "invalid or expired form link"}), 404
+    
+    form = FORM.get_by_id(link["form_id"])
+    if not form:
+        return jsonify({"error": "Inalid or expired form link"}), 404
+    
+    data = request.get_json()
+    answers = data.get("answers", [])
+    if not answers:
+        return jsonify({"error": "Answers are required"}), 400
+    
+    responder_ip = request.remote_addr
+    responder_ip = FORM_RESPONSE.submit(str(form["_Id"]), answers, responder_ip)
+    
+    return jsonify({"message": "Response submitted", "response_id": responder_ip})
+
+@form_response_bp.route("/form/<form_id>", methods=["GET"])
+def list_response(form_id):
+    responses = FORM_RESPONSE.get_by_form(form_id)
+    for r in responses:
+        r["_id"] = str(r["_id"])
+        r["form_id"] = str(r["form_id"])
+    return jsonify(responses), 200
+
+@form_response_bp.route("/results/<form_id>", methods=["GET"])
+def poll_results(form_id):
+    results = FORM_RESPONSE.get_poll_results(form_id)
+    return jsonify(results), 200
