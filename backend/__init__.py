@@ -19,6 +19,8 @@ mongo = PyMongo()
 
 socketio = SocketIO(cors_allowed_origins="*")
 
+REDIS_URL = os.getenv("REDIS_URL")
+
 def create_app():
     app = Flask(__name__)
     CORS(app,
@@ -55,7 +57,10 @@ def create_app():
     mail.init_app(app)
 
     app.config["SESSION_TYPE"] = "redis"
-    app.config["SESSION_REDIS"] = Redis.from_url(f"redis://{os.getenv('REDIS_URL')}")
+    app.config["SESSION_REDIS"] = Redis.from_url(REDIS_URL)
+    
+    app.config["RATELIMIT_STORAGE_URL"] = REDIS_URL
+    
     app.config['SESSION_PERMANENT'] = False
     app.config['SESSION_USE_SIGNER'] = True
     app.config['SESSION_KEY_PREFIX'] = 'feedback_app:'
