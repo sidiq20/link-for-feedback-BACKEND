@@ -1,7 +1,6 @@
 import os
 from datetime import timedelta
 from dotenv import load_dotenv
-import mongoengine
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from flask_session import Session
@@ -36,9 +35,7 @@ class Config:
     MAIL_USERNAME = os.getenv("SEND_EMAIL")
     MAIL_PASSWORD = os.getenv("SMTP_PASS")
     MAIL_DEFAULT_SENDER = os.getenv("SEND_EMAIL")
-
-
-    
+ 
     SECURITY_PASSWORD_SALT = os.getenv('SALT')
     
 def ensure_ttl_indexes(mongo):

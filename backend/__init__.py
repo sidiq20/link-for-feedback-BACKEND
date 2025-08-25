@@ -63,7 +63,7 @@ def create_app():
     
     app.config['SESSION_PERMANENT'] = False
     app.config['SESSION_USE_SIGNER'] = True
-    app.config['SESSION_KEY_PREFIX'] = 'feedback_app:'
+    app.config['SESSION_KEY_PREFIX'] = 'feedback_app'
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
     app.config['SECRET_KEY'] = app.config.get('SECRET_KEY') or secrets.token_hex(16)
     app.config['SESSION_COOKIE_NAME'] = app.config.get('SESSION_COOKIE_NAME', 'session')
