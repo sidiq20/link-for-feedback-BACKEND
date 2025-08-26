@@ -5,6 +5,7 @@ from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
 from flask_session import Session
 from pymongo import ASCENDING
+from bson import ObjectId
 
 load_dotenv()
 
@@ -76,3 +77,8 @@ def ensure_ttl_indexes(mongo):
     if "users" in db.list_collection_names():
         db.users.create_index([("email", ASCENDING)], unique=True, name="unique_email")
         db.users.create_index([("name", ASCENDING)], unique=True, name="unique_name")
+        
+def to_objectid(value):
+    if isinstance(value, ObjectId):
+        return value 
+    return ObjectId(str(value))

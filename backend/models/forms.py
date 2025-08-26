@@ -1,6 +1,7 @@
 from datetime import datetime
 from bson import ObjectId
 from flask import current_app
+from backend.utils.validation import to_objectid
 
 class FORM:
     COLLECTION = "forms"
@@ -14,10 +15,12 @@ class FORM:
         if not isinstance(questions, list) or len(questions) == 0:
             return False, "Questions muct be a non-empty list"
         
-        allowed_types = ["text", "radio", "checkbox", "pool", "date", "number"]
+        allowed_types = ["text", "radio", "checkbox", "poll", "date", "number"]
         
         for idx, q in enumerate(questions):
-            if not isinstance(q.get("question"), str) or not q["question"].strip():
+            
+            q_text = q.get("question") or q.get("text")
+            if not isinstance(q_text, str) or not q_text.strip():
                 return False, f"Question {idx+1} non-empy 'question' field"
             
             q_type = q.get("type")
@@ -25,7 +28,7 @@ class FORM:
                 return False, f"Question {idx+1} has invalid type '{q_type}'"
             
             options = q.get("options", [])
-            if q_type in ["radio", "checkbox", "pool"]:
+            if q_type in ["radio", "checkbox", "poll"]:
                 if not isinstance(options, list) or len(options) < 2:
                     return False, f"Question {idx+1} must have at least 2 options"
                 if not all(isinstance(opt, str) and opt.strip() for opt in options):
@@ -56,6 +59,7 @@ class FORM:
                 # except: return False, f"Question {idx+1} has invalid min date format"
                 
                 
+                
             
             if "required" in q and not isinstance(q["required"], bool):
                 return False, f"Question {idx+1} 'required' must be a boolean"
@@ -70,7 +74,7 @@ class FORM:
         for idx, q in enumerate(question):
             q_type = q["type"]
             required = q.get("required", False)
-            answer = responses.get(str(idx))
+            answer = responses.get(str(idx+1))
             
             if required and (answer is None or (isinstance(answer, str) and not answer.strip())):
                 return False, f"Question {idx+1} is required"
@@ -83,7 +87,7 @@ class FORM:
                     return False, f"Question {idx+1} must be a text answer"
                 
             elif q_type == "radio":
-                if answer not in q["optiosn"]:
+                if answer not in q["options"]:
                     return False, f"Question {idx+1} answer must be one of {q['options']}"
                 
             elif q_type == "checkbox":
@@ -91,7 +95,7 @@ class FORM:
                     return False, f"Question {idx+1} must be a list of answers" 
                 invalid_opts = [opt for opt in answer if opt not in q["options"]]
                 if invalid_opts:
-                    return False, f"Question {idx+1} has invalid optiosn {invalid_opts}"
+                    return False, f"Question {idx+1} has invalid options {invalid_opts}"
                 
             elif q_type == "poll":
                 if answer not in [opt["label"] for opt in q["options"]]:
@@ -101,7 +105,7 @@ class FORM:
                 if not isinstance(answer, (int, float)):
                     return False, f"Question {idx+1} must be a number" 
                 if q.get("min") is not None and answer < q["min"]:
-                    return False, f"Question {idx} must be >= {q['min']}"
+                    return False, f"Question {idx+1} must be >= {q['min']}"
                 if q.get("max") is not None and answer > q["max"]:
                     return False, f"Question {idx+1} must be <= {q['max']}"
                 
@@ -126,12 +130,12 @@ class FORM:
             return False, "form not found"
         
         try:
-            question = form["question"][question_index]
+            question = form["questions"][question_index]
         except IndexError:
             return False, "Invalid question index"
         
-        if question["type"] != "pool":
-            return False, "This question is not a pool" 
+        if question["type"] != "poll":
+            return False, "This question is not a poll" 
 
         updated = False 
         for opt in question["options"]:
@@ -156,10 +160,16 @@ class FORM:
             raise ValueError(msg)
         
         doc = {
-            "user_id": ObjectId(user_id),
+            "user_id": to_objectid(user_id),
             "title": title,
             "description": description,
-            "questions": questions,
+            "questions": [
+                {
+                    **q,
+                    "question": q.get("question") or q.get("text")
+                }
+                for q in questions
+            ],
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
@@ -172,7 +182,7 @@ class FORM:
     
     @staticmethod
     def get_by_user(user_id):
-        return FORM.get_collection().find({"user_id": ObjectId(user_id)})
+        return list(FORM.get_collection().find({"user_id": to_objectid(user_id)}))
     
     @staticmethod
     def update(form_id, update_data):

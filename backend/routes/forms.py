@@ -45,8 +45,20 @@ def create_form():
     if not title or not questions:
         return jsonify({"error": "Title and questions are required"}), 400 
     
-    form_id = FORM.create(g.current_user["_id"])
-    return jsonify({"message": "Form created", "form_id": form_id}), 201
+    try:
+        form_id = FORM.create(
+            g.current_user["_id"],
+            title,
+            description,
+            questions
+        )
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    
+    return jsonify({
+        "message": "Form created",
+        "form_id": form_id
+    }), 201
 
 @forms_bp.route("/", methods=["GET"])
 @jwt_required
@@ -54,6 +66,9 @@ def list_forms():
     forms = FORM.get_by_user(g.current_user["_id"])
     for f in forms:
         f["_id"] = str(f["_id"])
+        
+    print("DEBUG list_forms user_id:", g.current_user["_id"], type(g.current_user["_id"]))
+
     return jsonify(forms), 200
 
 @forms_bp.route("/<form_id>", methods=["GET"])

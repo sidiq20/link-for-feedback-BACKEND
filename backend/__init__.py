@@ -5,7 +5,6 @@ from datetime import timedelta
 import logging
 from .config import Config, test_mongo_connection, ensure_ttl_indexes, ensure_unique_indexes
 from backend.extensions import limiter, mail
-from flasgger import Swagger
 from dotenv import load_dotenv
 import os
 from flask_pymongo import PyMongo
@@ -85,22 +84,6 @@ def create_app():
         format='%(asctime)s %(levelname)s %(name)s %(message)s'
     )
     
-
-    swagger_config = {
-        "headers": [],
-        "specs": [
-            {
-                "endpoint": 'apispec_1',
-                "route": '/apispec_1.json',
-                "rule_filter": lambda rule: True,
-                "model_filter": lambda tag: True,
-            }
-        ],
-        "static_url_path": "/flasgger_static",
-        "swagger_ui": True,
-        "specs_route": "/apidocs/"
-    }
-    Swagger(app, config=swagger_config)
     
     socketio.init_app(app)
 
@@ -110,6 +93,9 @@ def create_app():
     from backend.routes.analytics import analytics_bp
     from backend.routes.anonymous import anonymous_bp
     from backend.routes.anonymous_links import anonymous_links_bp
+    from backend.routes.forms import forms_bp
+    from backend.routes.form_links import form_links_bp
+    from backend.routes.form_response import form_response_bp
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(feedback_links_bp, url_prefix='/api/links')
@@ -117,6 +103,10 @@ def create_app():
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
     app.register_blueprint(anonymous_links_bp, url_prefix='/api/anonymous-links')
     app.register_blueprint(anonymous_bp, url_prefix='/api/anonymous')
+    app.register_blueprint(forms_bp, url_prefix="/api/forms")
+    app.register_blueprint(form_links_bp, url_prefix="/api/form-links")
+    app.register_blueprint(form_response_bp, url_prefix="/api/form-response")
+    
 
     @app.errorhandler(404)
     def not_found(error):

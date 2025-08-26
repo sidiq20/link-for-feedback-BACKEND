@@ -2,6 +2,7 @@ import re
 import html
 from email_validator import validate_email as email_validate, EmailNotValidError
 from itsdangerous import URLSafeTimedSerializer
+from bson import ObjectId
 
 def generate_token(salt, email, secret_key):
     serializer = URLSafeTimedSerializer(secret_key)
@@ -92,3 +93,8 @@ def validate_feedback_data(data):
         errors['comment'] = 'Comment must be less than 5000 characters'
     
     return errors
+
+def to_objectid(value):
+    if isinstance(value, ObjectId):
+        return value 
+    return ObjectId(str(value))

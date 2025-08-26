@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from backend.models.form_links import FORM_LINK
 from backend.models.forms import FORM
 from backend.models.form_responses import FORM_RESPONSE
+from backend.middleware.auth import jwt_required
 from backend import socketio
 
 form_response_bp = Blueprint("form_response", __name__)
@@ -30,6 +31,7 @@ def submit_response(slug):
     return jsonify({"message": "Response submitted", "response_id": responder_ip})
 
 @form_response_bp.route("/form/<form_id>", methods=["GET"])
+@jwt_required
 def list_response(form_id):
     responses = FORM_RESPONSE.get_by_form(form_id)
     for r in responses:
