@@ -2,6 +2,7 @@ from datetime import datetime
 from bson import ObjectId
 from flask import current_app
 from backend.utils.validation import to_objectid
+from backend.models.response import RESPONSE
 
 class FORM:
     COLLECTION = "forms"
@@ -28,9 +29,12 @@ class FORM:
                 return False, f"Question {idx+1} has invalid type '{q_type}'"
             
             options = q.get("options", [])
+            
+            
             if q_type in ["radio", "checkbox", "poll"]:
                 if not isinstance(options, list) or len(options) < 2:
                     return False, f"Question {idx+1} must have at least 2 options"
+                
                 if not all(isinstance(opt, str) and opt.strip() for opt in options):
                     return False, f"Question {idx+1} has invalid options"
             elif q_type == "text" and "options" in q:
@@ -135,23 +139,36 @@ class FORM:
             return False, "Invalid question index"
         
         if question["type"] != "poll":
-            return False, "This question is not a poll" 
+            return False, f"This question is type '{question['type']}', only 'poll' supports voting"
 
         updated = False 
-        for opt in question["options"]:
-            if opt["label"] == option_label:
-                opt["votes"] = opt.get("votes", 0) + 1
-                updated = True 
-                break 
+        for idx, opt in enumerate(question["options"]):
+            # Case 1: option stored as string
+            if isinstance(opt, str) and opt == option_label:
+                # Convert string to dict with first vote
+                question["options"][idx] = {"label": opt, "votes": 1}
+                updated = True
+                break
+            # Case 2: option already stored as dict
+            elif isinstance(opt, dict) and opt.get("label") == option_label:
+                question["options"][idx]["votes"] = question["options"][idx].get("votes", 0) + 1
+                updated = True
+                break
         
         if not updated:
             return False, "Option not found" 
         
         FORM.get_collection().update_one(
             {"_id": form["_id"]},
-            {"$set": {"questions": form["questions"], "updated_at": datetime.utcnow()}}
+            {
+                "$set": {
+                "questions": form["questions"],
+                "updated_at": datetime.utcnow()
+                }
+            }
         )
         return True, "vote counted"
+
     
     @staticmethod
     def create(user_id, title, description, questions):
@@ -195,3 +212,56 @@ class FORM:
     @staticmethod
     def delete(form_id):
         return FORM.get_collection().delete_one({"_id": ObjectId(form_id)})
+    
+    
+    @staticmethod
+    def get_results(form_id):
+        form = FORM.get_by_id(form_id)
+        if not form:
+            return None, "Form not found"
+
+        results = []
+
+        for q_index, question in enumerate(form["questions"]):
+            if question["type"] == "poll":
+                # Poll results: already stored as counts in form
+                poll_results = []
+                for opt in question["options"]:
+                    # option is dict {"label": ..., "votes": ...}
+                    poll_results.append({
+                        "label": opt["label"],
+                        "votes": opt.get("votes", 0)
+                    })
+                results.append({
+                    "type": "poll",
+                    "question": question["question"],
+                    "results": poll_results
+                })
+
+            elif question["type"] == "radio":
+                # Radio results: aggregate responses from RESPONSE collection
+                pipeline = [
+                    {"$match": {"form_id": form_id, "question_index": q_index}},
+                    {"$group": {"_id": "$answer", "count": {"$sum": 1}}},
+                    {"$project": {"label": "$_id", "votes": "$count", "_id": 0}}
+                ]
+                radio_results = list(RESPONSE.get_collection().aggregate(pipeline))
+                results.append({
+                    "type": "radio",
+                    "question": question["question"],
+                    "results": radio_results
+                })
+
+            elif question["type"] == "text":
+                # Text answers: return as a list of user submissions
+                text_answers = RESPONSE.get_collection().find(
+                    {"form_id": form_id, "question_index": q_index},
+                    {"_id": 0, "answer": 1}
+                )
+                results.append({
+                    "type": "text",
+                    "question": question["question"],
+                    "answers": [doc["answer"] for doc in text_answers]
+                })
+
+        return results, None

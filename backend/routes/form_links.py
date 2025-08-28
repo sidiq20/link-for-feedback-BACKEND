@@ -19,7 +19,7 @@ def get_form_by_slug(slug):
         return jsonify({"error": "Form link invalid or expired"}), 404
     
     form = FORM.get_by_id(link["form_id"])
-    if not link:
+    if not form:
         return jsonify({"error": "Form not found"}), 404 
     
     form["_id"] = str(form["_id"])

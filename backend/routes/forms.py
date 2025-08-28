@@ -11,28 +11,45 @@ forms_bp = Blueprint("forms", __name__)
 
 @forms_bp.route("<form_id>/vote", methods=["POST"])
 def vote(form_id):
-    data = request.json 
+    data = request.json
     question_index = data.get("question_index")
     option_label = data.get("option")
     user_id = data.get("user_id")
     session_id = data.get("session_id")
-    
-    if RESPONSE.has_voted(form_id, question_index, user_id, session_id):
-        return jsonify({"error": "You have already voted on this question"}), 400
-    
-    success, msg = FORM.vote(form_id, question_index, option_label)
-    if not success:
-        return jsonify({"error": msg}), 400 
-    
-    RESPONSE.create(form_id, question_index, user_id, session_id, option_label)
-    
+
     form = FORM.get_by_id(form_id)
-    socketio.emit("vote_update", {
-        "form_id": form_id,
-        "questions": form["questions"]
-    }, broadcast=True)
+    if not form:
+        return jsonify({"error": "Form not found"}), 404
     
-    return jsonify({"message": "Vote counted"})
+    try:
+        question = form["questions"][question_index]
+    except IndexError:
+        return jsonify({"error": "Invalid question index"}), 400
+
+    # Prevent duplicate votes
+    if RESPONSE.has_voted(form_id, question_index, user_id, session_id):
+        return jsonify({"error": "You have already answered this question"}), 400
+
+    if question["type"] == "poll":
+        success, msg = FORM.vote(form_id, question_index, option_label)
+        if not success:
+            return jsonify({"error": msg}), 400
+    elif question["type"] == "radio":
+        # Store response, but do NOT increment votes
+        RESPONSE.create(form_id, question_index, user_id, session_id, option_label)
+    else:
+        return jsonify({"error": f"Unsupported question type '{question['type']}'"}), 400
+
+    # Emit update (poll only, radios don’t need live tally)
+    if question["type"] == "poll":
+        form = FORM.get_by_id(form_id)
+        socketio.emit("vote_update", {
+            "form_id": form_id,
+            "questions": form["questions"]
+        })
+
+    return jsonify({"message": "Response recorded"})
+
 
 @forms_bp.route("/", methods=["POST"])
 @jwt_required
@@ -92,3 +109,10 @@ def update_form(form_id):
 def delete_form(form_id):
     FORM.delete(form_id)
     return jsonify({"message": "Form deleted"}), 200
+
+@forms_bp.route("<form_id>/results", methods=["GET"])
+def get_results(form_id):
+    results, error = FORM.get_results(form_id)
+    if error:
+        return jsonify({"error": error}), 404 
+    return jsonify(results)

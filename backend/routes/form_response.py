@@ -15,7 +15,7 @@ def submit_response(slug):
     
     form = FORM.get_by_id(link["form_id"])
     if not form:
-        return jsonify({"error": "Inalid or expired form link"}), 404
+        return jsonify({"error": "invalid or expired form link"}), 404
     
     data = request.get_json()
     answers = data.get("answers", [])
@@ -23,12 +23,13 @@ def submit_response(slug):
         return jsonify({"error": "Answers are required"}), 400
     
     responder_ip = request.remote_addr
-    responder_ip = FORM_RESPONSE.submit(str(form["_Id"]), answers, responder_ip)
+    response_id = FORM_RESPONSE.submit(str(form["_id"]), answers, responder_ip)
     
     results = FORM_RESPONSE.get_poll_results(str(form["_id"]))
     socketio.emit("form_update", {"form_id": str(form["_id"]), "results": results}, room=str(form["_id"]))
     
-    return jsonify({"message": "Response submitted", "response_id": responder_ip})
+    return jsonify({"message": "Response submitted", "response_id": response_id})
+
 
 @form_response_bp.route("/form/<form_id>", methods=["GET"])
 @jwt_required
