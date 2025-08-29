@@ -3,6 +3,7 @@ from bson import ObjectId
 from flask import current_app
 from backend.utils.validation import to_objectid
 from backend.models.response import RESPONSE
+from backend.models.form_links import FORM_LINK
 
 class FORM:
     COLLECTION = "forms"
@@ -45,7 +46,7 @@ class FORM:
                 max_val = q.get("max")
                 if min_val is not None and not isinstance(min_val, (int, float)):
                     return False, f"Question {idx+1} min must be a number" 
-                if max_val is not None and not isinstance(max_val, (min, float)):
+                if max_val is not None and not isinstance(max_val, (int, float)):
                     return False, f"Question {idx+1} max must be a number" 
                 if min_val is not None and max_val is not None and min_val > max_val:
                     return False, f"Question {idx+1} min cannot be greater than max"
@@ -190,8 +191,13 @@ class FORM:
             "created_at": datetime.utcnow(),
             "updated_at": datetime.utcnow()
         }
+        
+        
         result = FORM.get_collection().insert_one(doc)
-        return str(result.inserted_id)
+        form_id = str(result.inserted_id) 
+        
+        slug = FORM_LINK.create(user_id, form_id)
+        return {"form_id": form_id, "slug": slug}
     
     @staticmethod
     def get_by_id(form_id):

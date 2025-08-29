@@ -50,3 +50,11 @@ class FORM_LINK:
             {"slug": slug},
             {"$set": {"is_active": False}}
         )
+        
+    @staticmethod
+    def get_by_form_id(form_id):
+        return FORM_LINK.get_collection().find_one({
+            "form_id": ObjectId(form_id),
+            "is_active": True,
+            "expires_at": {"$gte": datetime.utcnow()}
+        })

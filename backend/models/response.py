@@ -30,7 +30,7 @@ class RESPONSE:
         }
         if user_id:
             query["user_id"] = ObjectId(user_id)
-        elif session_id:
+        else:
             query["session_id"] = session_id
             
         return RESPONSE.get_collection().find_one(query) is not None

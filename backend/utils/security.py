@@ -2,6 +2,7 @@ import secrets
 import hashlib
 import hmac
 from flask import session, request 
+import uuid
 
 def generate_csrf_token():
     """Generate csrf token for forms """
@@ -31,4 +32,5 @@ def hash_ip_address(ip_address, salt=None):
 
 def secure_compare(a, b):
     """Securely compare two strings to prevent timing attacks"""
-    return hmac.compare_digest(str(a), str(b))
+    return hmac.compare_digest(str(a), str(b)) 
+

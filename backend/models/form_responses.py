@@ -31,15 +31,15 @@ class FORM_RESPONSE:
         
         for response in responses:
             for ans in response["answers"]:
-                q = ans["questions"]
+                q = ans["question"]
                 a = ans["answer"]
                 
                 if isinstance(a, list):
                     for option in a:
                         poll_results.setdefault(q, {}).setdefault(option, 0)
                         poll_results[q][option] += 1
-                    else:
-                        poll_results.setdefault(q, {}).setdefault(a, 0)
-                        poll_results[q][a] += 1
+                else:
+                    poll_results.setdefault(q, {}).setdefault(a, 0)
+                    poll_results[q][a] += 1
                         
         return poll_results
