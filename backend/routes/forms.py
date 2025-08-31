@@ -15,7 +15,7 @@ def get_or_create_session(request):
         session_id = str(uuid.uuid4())
     return session_id
 
-@forms_bp.route("<form_id>/vote", methods=["POST"])
+@forms_bp.route("/<form_id>/vote", methods=["POST"])
 def vote(form_id):
     data = request.json
     question_index = data.get("question_index")
