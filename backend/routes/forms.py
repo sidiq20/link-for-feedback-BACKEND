@@ -124,6 +124,7 @@ def delete_form(form_id):
     return jsonify({"message": "Form deleted"}), 200
 
 @forms_bp.route("<form_id>/results", methods=["GET"])
+@jwt_required
 def get_results(form_id):
     results, error = FORM.get_results(form_id)
     if error:

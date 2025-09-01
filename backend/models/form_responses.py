@@ -21,7 +21,7 @@ class FORM_RESPONSE:
         return str(result.inserted_id)
        
     @staticmethod
-    def get_by_form(form_id):
+    def get_by_form_id(form_id):
         return list(FORM_RESPONSE.get_collection().find({"form_id": ObjectId(form_id)}))
     
     @staticmethod

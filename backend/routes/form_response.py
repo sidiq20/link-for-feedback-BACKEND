@@ -34,7 +34,7 @@ def submit_response(slug):
 @form_response_bp.route("/form/<form_id>", methods=["GET"])
 @jwt_required
 def list_response(form_id):
-    responses = FORM_RESPONSE.get_by_form(form_id)
+    responses = FORM_RESPONSE(form_id)
     for r in responses:
         r["_id"] = str(r["_id"])
         r["form_id"] = str(r["form_id"])

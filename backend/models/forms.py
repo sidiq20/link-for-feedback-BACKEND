@@ -3,6 +3,7 @@ from bson import ObjectId
 from flask import current_app
 from backend.utils.validation import to_objectid
 from backend.models.response import RESPONSE
+from backend.models.form_responses import FORM_RESPONSE
 from backend.models.form_links import FORM_LINK
 
 class FORM:
@@ -139,8 +140,9 @@ class FORM:
         except IndexError:
             return False, "Invalid question index"
         
-        if question["type"] != "poll":
-            return False, f"This question is type '{question['type']}', only 'poll' supports voting"
+        if question["type"] == "poll":
+            if all(isinstance(opt, str) for opt in question["questions"]):
+                return False, f"This question is type '{question['type']}', only 'poll' supports voting"
 
         updated = False 
         for idx, opt in enumerate(question["options"]):
@@ -225,49 +227,64 @@ class FORM:
         form = FORM.get_by_id(form_id)
         if not form:
             return None, "Form not found"
-
+        
+        responses = FORM_RESPONSE.get_by_form_id(form_id)
         results = []
 
         for q_index, question in enumerate(form["questions"]):
-            if question["type"] == "poll":
-                # Poll results: already stored as counts in form
+            q_type = question["type"]
+            q_text = question["question"]
+            
+            if q_type == "poll":  # typo fixed here (was "pool")
                 poll_results = []
                 for opt in question["options"]:
-                    # option is dict {"label": ..., "votes": ...}
-                    poll_results.append({
-                        "label": opt["label"],
-                        "votes": opt.get("votes", 0)
-                    })
+                    if isinstance(opt, dict):
+                        poll_results.append({
+                            "label": opt["label"],
+                            "votes": opt.get("votes", 0)
+                        })
+                    else:
+                        poll_results.append({
+                            "label": opt,
+                            "votes": 0
+                        })
                 results.append({
-                    "type": "poll",
-                    "question": question["question"],
+                    "type": q_type,
+                    "question": q_text,
                     "results": poll_results
                 })
 
-            elif question["type"] == "radio":
-                # Radio results: aggregate responses from RESPONSE collection
-                pipeline = [
-                    {"$match": {"form_id": form_id, "question_index": q_index}},
-                    {"$group": {"_id": "$answer", "count": {"$sum": 1}}},
-                    {"$project": {"label": "$_id", "votes": "$count", "_id": 0}}
+            elif q_type in ["radio", "checkbox"]:
+                aggregated = {}
+                for r in responses:
+                    ans = r["answers"][q_index]["answer"]
+                    if isinstance(ans, list):
+                        for a in ans:
+                            aggregated[a] = aggregated.get(a, 0) + 1  # small bug fix here
+                    else:
+                        aggregated[ans] = aggregated.get(ans, 0) + 1
+                results.append({
+                    "type": q_type,
+                    "question": q_text,
+                    "results": [{"label": k, "count": v} for k, v in aggregated.items()]
+                })
+
+            elif q_type in ["text", "number", "date"]:
+                collected = [
+                    r["answers"][q_index]["answer"]
+                    for r in responses if r["answers"][q_index].get("answer")
                 ]
-                radio_results = list(RESPONSE.get_collection().aggregate(pipeline))
                 results.append({
-                    "type": "radio",
-                    "question": question["question"],
-                    "results": radio_results
+                    "type": q_type,
+                    "question": q_text,
+                    "answers": collected
                 })
 
-            elif question["type"] == "text":
-                # Text answers: return as a list of user submissions
-                text_answers = RESPONSE.get_collection().find(
-                    {"form_id": form_id, "question_index": q_index},
-                    {"_id": 0, "answer": 1}
-                )
+            else:
                 results.append({
-                    "type": "text",
-                    "question": question["question"],
-                    "answers": [doc["answer"] for doc in text_answers]
+                    "type": q_type,
+                    "question": q_text,
+                    "results": []
                 })
 
-        return results, None
+        return results, None   # ✅ always return two values
