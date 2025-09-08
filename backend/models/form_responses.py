@@ -26,7 +26,7 @@ class FORM_RESPONSE:
     
     @staticmethod
     def get_poll_results(form_id):
-        responses = FORM_RESPONSE.get_by_form(form_id)
+        responses = FORM_RESPONSE.get_by_form_id(form_id)
         poll_results = {}
         
         for response in responses:
