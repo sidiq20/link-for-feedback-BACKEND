@@ -18,9 +18,12 @@ def submit_response(slug):
         return jsonify({"error": "invalid or expired form link"}), 404
     
     data = request.get_json()
+    current_app.logger.info(f"Reciaved data: {data}")
+    current_app.logger.info(f"Received data: {data}")
     answers = data.get("answers", [])
     if not answers:
         return jsonify({"error": "Answers are required"}), 400
+        print("Saving answers", answers)
     
     responder_ip = request.remote_addr
     response_id = FORM_RESPONSE.submit(str(form["_id"]), answers, responder_ip)

@@ -125,6 +125,49 @@ def register():
 
 @auth_bp.route("/login", methods=["POST"])
 def login():
+    """
+    User login
+    ---
+    tags:
+      - Authentication
+    consumes:
+      - application/json
+    parameters:
+      - in: body
+        name: body
+        required: true
+        schema:
+          type: object
+          required:
+            - email
+            - password
+          properties:
+            email:
+              type: string
+            password:
+              type: string
+    responses:
+      200:
+        description: Login success
+        schema:
+          type: object
+          properties:
+            message:
+              type: string
+            access_token:
+              type: string
+            refresh_token:
+              type: string
+            user:
+              type: object
+              properties:
+                _id:
+                  type: string
+                email:
+                  type: string
+                name:
+                  type: string
+    """
     try:
         data = request.get_json() or {}
         identifier = data.get("email", "").strip().lower()

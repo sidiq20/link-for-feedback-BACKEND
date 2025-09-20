@@ -12,6 +12,8 @@ import secrets
 import uuid
 from redis import Redis
 from flask_socketio import SocketIO
+from flasgger import Swagger 
+
 
 load_dotenv()
 mongo = PyMongo()
@@ -36,6 +38,7 @@ def create_app():
     app.config['CORS_ALLOW_METHODS'] = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 
 
+    
     app.config.from_object(Config)
 
     if not app.config.get('MONGO_URI'):
@@ -107,6 +110,23 @@ def create_app():
     app.register_blueprint(form_links_bp, url_prefix="/api/form-links")
     app.register_blueprint(form_response_bp, url_prefix="/api/form-response")
     
+
+
+    swagger_config = {
+        "headers": [],
+        "specs": [
+            {
+                "endpoint": 'apispec',
+                "route": '/apispec.json',
+                "rule_filter": lambda rule: True,  # include all routes
+                "model_filter": lambda tag: True,  # include all models
+            }
+        ],
+        "static_url_path": "/flasgger_static",
+        "swagger_ui": True,
+        "specs_route": "/docs/"  # Swagger UI available at /docs
+    }
+    Swagger(app, config=swagger_config)
 
     @app.errorhandler(404)
     def not_found(error):
