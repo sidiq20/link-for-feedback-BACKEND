@@ -87,9 +87,15 @@ def create_form():
 @forms_bp.route("/", methods=["GET"])
 @jwt_required
 def list_forms():
+    from backend.models.form_links import FORM_LINK
+    
     forms = FORM.get_by_user(g.current_user["_id"])
     for f in forms:
         f["_id"] = str(f["_id"])
+        # Add form link slug if it exists
+        form_link = FORM_LINK.get_by_form_id(f["_id"])
+        if form_link:
+            f["slug"] = form_link["slug"]
         
     print("DEBUG list_forms user_id:", g.current_user["_id"], type(g.current_user["_id"]))
 

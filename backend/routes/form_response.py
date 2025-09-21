@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, current_app
 from backend.models.form_links import FORM_LINK
 from backend.models.forms import FORM
 from backend.models.form_responses import FORM_RESPONSE
@@ -9,29 +9,53 @@ form_response_bp = Blueprint("form_response", __name__)
 
 @form_response_bp.route("/submit/<slug>", methods=["POST"])
 def submit_response(slug):
-    link = FORM_LINK.get_by_slug(slug)
-    if not link:
-        return jsonify({"error": "invalid or expired form link"}), 404
-    
-    form = FORM.get_by_id(link["form_id"])
-    if not form:
-        return jsonify({"error": "invalid or expired form link"}), 404
-    
-    data = request.get_json()
-    current_app.logger.info(f"Reciaved data: {data}")
-    current_app.logger.info(f"Received data: {data}")
-    answers = data.get("answers", [])
-    if not answers:
-        return jsonify({"error": "Answers are required"}), 400
-        print("Saving answers", answers)
-    
-    responder_ip = request.remote_addr
-    response_id = FORM_RESPONSE.submit(str(form["_id"]), answers, responder_ip)
-    
-    results = FORM_RESPONSE.get_poll_results(str(form["_id"]))
-    socketio.emit("form_update", {"form_id": str(form["_id"]), "results": results}, room=str(form["_id"]))
-    
-    return jsonify({"message": "Response submitted", "response_id": response_id})
+    try:
+        link = FORM_LINK.get_by_slug(slug)
+        if not link:
+            return jsonify({"error": "Form link not found or expired"}), 404
+        
+        form = FORM.get_by_id(link["form_id"])
+        if not form:
+            return jsonify({"error": "Form not found"}), 404
+        
+        data = request.get_json()
+        current_app.logger.info(f"Received form submission data: {data}")
+        
+        # Handle both 'answers' and 'responses' keys for flexibility
+        raw_answers = data.get("answers") or data.get("responses", {})
+        if not raw_answers:
+            return jsonify({"error": "Answers are required"}), 400
+        
+        # Transform the answers to match expected format
+        structured_answers = []
+        for idx, question in enumerate(form["questions"]):
+            question_key = str(idx + 1)
+            if question_key in raw_answers:
+                structured_answers.append({
+                    "question": question.get("question", question.get("text", f"Question {idx + 1}")),
+                    "answer": raw_answers[question_key]
+                })
+        
+        current_app.logger.info(f"Structured answers: {structured_answers}")
+        
+        responder_ip = request.remote_addr
+        response_id = FORM_RESPONSE.submit(str(form["_id"]), structured_answers, responder_ip)
+        
+        # Emit real-time updates
+        try:
+            results = FORM_RESPONSE.get_poll_results(str(form["_id"]))
+            socketio.emit("form_update", {"form_id": str(form["_id"]), "results": results}, room=str(form["_id"]))
+        except Exception as e:
+            current_app.logger.warning(f"Failed to emit socket update: {e}")
+        
+        return jsonify({
+            "message": "Response submitted successfully", 
+            "response_id": response_id
+        }), 201
+        
+    except Exception as e:
+        current_app.logger.error(f"Form submission error: {e}")
+        return jsonify({"error": "Failed to submit form response"}), 500
 
 
 @form_response_bp.route("/form/<form_id>", methods=["GET"])
