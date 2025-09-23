@@ -61,13 +61,35 @@ def submit_response(slug):
 @form_response_bp.route("/form/<form_id>", methods=["GET"])
 @jwt_required
 def list_response(form_id):
+    current_app.logger.info(f"Getting responses for form_id: {form_id}")
     responses = FORM_RESPONSE.get_by_form_id(form_id)
+    current_app.logger.info(f"Found {len(responses)} responses")
+    
     for r in responses:
         r["_id"] = str(r["_id"])
         r["form_id"] = str(r["form_id"])
+        
+        # Log original answers structure
+        current_app.logger.info(f"Original answers structure: {r.get('answers', 'NO ANSWERS')}")
+        
+        # Transform answers from array to object for frontend compatibility
+        if "answers" in r and isinstance(r["answers"], list):
+            answers_obj = {}
+            for ans in r["answers"]:
+                if "question" in ans and "answer" in ans:
+                    answers_obj[ans["question"]] = ans["answer"]
+            r["answers"] = answers_obj
+            current_app.logger.info(f"Transformed answers: {r['answers']}")
+    
     return jsonify(responses), 200
 
 @form_response_bp.route("/results/<form_id>", methods=["GET"])
 def poll_results(form_id):
-    results = FORM_RESPONSE.get_poll_results(form_id)
-    return jsonify(results), 200
+    try:
+        current_app.logger.info(f"Getting poll results for form_id: {form_id}")
+        results = FORM_RESPONSE.get_poll_results(form_id)
+        current_app.logger.info(f"Poll results: {results}")
+        return jsonify(results), 200
+    except Exception as e:
+        current_app.logger.error(f"Error getting poll results for form_id {form_id}: {e}")
+        return jsonify({"error": "Failed to get poll results"}), 500

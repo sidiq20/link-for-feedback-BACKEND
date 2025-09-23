@@ -88,6 +88,7 @@ def create_form():
 @jwt_required
 def list_forms():
     from backend.models.form_links import FORM_LINK
+    from backend.models.form_responses import FORM_RESPONSE
     
     forms = FORM.get_by_user(g.current_user["_id"])
     for f in forms:
@@ -97,6 +98,10 @@ def list_forms():
         if form_link:
             f["slug"] = form_link["slug"]
         
+        # Add response count
+        responses = FORM_RESPONSE.get_by_form_id(f["_id"])
+        f["response_count"] = len(responses)
+        
     print("DEBUG list_forms user_id:", g.current_user["_id"], type(g.current_user["_id"]))
 
     return jsonify(forms), 200
@@ -104,10 +109,16 @@ def list_forms():
 @forms_bp.route("/<form_id>", methods=["GET"])
 @jwt_required
 def get_form(form_id):
+    from backend.models.form_responses import FORM_RESPONSE
+    
     form = FORM.get_by_id(form_id)
     if not form:
         return jsonify({"error": "Form not found"}), 404
     form["_id"] = str(form["_id"])
+    
+    # Add response count
+    responses = FORM_RESPONSE.get_by_form_id(form_id)
+    form["response_count"] = len(responses)
     
     session_id = get_or_create_session(request)
     

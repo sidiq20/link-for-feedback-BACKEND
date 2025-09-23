@@ -30,16 +30,32 @@ class FORM_RESPONSE:
         poll_results = {}
         
         for response in responses:
-            for ans in response["answers"]:
-                q = ans["question"]
-                a = ans["answer"]
-                
-                if isinstance(a, list):
-                    for option in a:
-                        poll_results.setdefault(q, {}).setdefault(option, 0)
-                        poll_results[q][option] += 1
-                else:
-                    poll_results.setdefault(q, {}).setdefault(a, 0)
-                    poll_results[q][a] += 1
+            answers = response.get("answers", [])
+            
+            # Handle different answer formats
+            if isinstance(answers, list):
+                # Array format: [{"question": "...", "answer": "..."}]
+                for ans in answers:
+                    if isinstance(ans, dict) and "question" in ans and "answer" in ans:
+                        q = ans["question"]
+                        a = ans["answer"]
+                        
+                        if isinstance(a, list):
+                            for option in a:
+                                poll_results.setdefault(q, {}).setdefault(option, 0)
+                                poll_results[q][option] += 1
+                        else:
+                            poll_results.setdefault(q, {}).setdefault(a, 0)
+                            poll_results[q][a] += 1
+            elif isinstance(answers, dict):
+                # Object format: {"question": "answer", "question2": "answer2"}
+                for q, a in answers.items():
+                    if isinstance(a, list):
+                        for option in a:
+                            poll_results.setdefault(q, {}).setdefault(option, 0)
+                            poll_results[q][option] += 1
+                    else:
+                        poll_results.setdefault(q, {}).setdefault(a, 0)
+                        poll_results[q][a] += 1
                         
         return poll_results
