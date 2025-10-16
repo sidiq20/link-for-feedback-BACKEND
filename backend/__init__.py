@@ -100,6 +100,12 @@ def create_app():
     from backend.routes.forms import forms_bp
     from backend.routes.form_links import form_links_bp
     from backend.routes.form_response import form_response_bp
+    from backend.routes.exam.exam_auth import exam_auth_bp
+    from backend.routes.exam.exam_manage import exam_manage_bp
+    from backend.routes.exam.exam_take import exam_take_bp
+    from backend.routes.exam.exam_result import exam_result_bp
+    from backend.routes.exam.exam_portal import exam_portal_bp
+    
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
     app.register_blueprint(feedback_links_bp, url_prefix='/api/links')
@@ -110,7 +116,11 @@ def create_app():
     app.register_blueprint(forms_bp, url_prefix="/api/forms")
     app.register_blueprint(form_links_bp, url_prefix="/api/form-links")
     app.register_blueprint(form_response_bp, url_prefix="/api/form-response")
-    
+    app.register_blueprint(exam_auth_bp, url_prefix="/api/exam_auth_bp")
+    app.register_blueprint(exam_manage_bp, url_prefix="/api/exam_manage")
+    app.register_blueprint(exam_take_bp, url_prefix="/api/exam_take")
+    app.register_blueprint(exam_result_bp, url_prefix="/api/exam_result/")
+    app.register_blueprint(exam_portal_bp, url_prefix="/api/exam_portal/")
 
 
     socketio.init_app(app, message_queue=app.config.get('REDIS_URL'))

@@ -40,15 +40,23 @@ class Config:
     SECURITY_PASSWORD_SALT = os.getenv('SALT')
     
 def ensure_ttl_indexes(mongo):
-    mongo.db.anonymous.create_index(
+    db = mongo.db
+    db.anonymous.create_index(
         [("submitted_at", 1)],
         expireAfterSeconds=7 * 24 * 60 * 60,
     )
     
-    mongo.db.anonymous_links.create_index(
+    db.anonymous_links.create_index(
         [("created_at", 1)],
         expireAfterSeconds=7 * 24 * 60 * 60,
     )
+    db.exams.create_index('code', unique=True)
+    db.exams.create_index([('owner_id', 1)])
+    db.exam_registration.create_index([('user_id', 1)])
+    db.exam_session.create_index([('exam_id', 1), ('user_id', 1)])
+    db.exam_results.create_index([('exam_id', 1)])
+    print('✅ MongoDB indexes ensured.')
+    
     
 def test_mongo_connection(uri):
     try:

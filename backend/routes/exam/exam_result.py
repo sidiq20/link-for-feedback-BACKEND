@@ -34,7 +34,7 @@ def exam_results_all(exam_id):
         current_app.logger.exception('Get exam results error')
         return jsonify({'error': 'Failed to fetch results'}), 500
 
-@token_required.route("/student/<student_id>/list", methods=['GET'])
+@exam_result_bp.route("/student/<student_id>/list", methods=['GET'])
 @token_required
 def student_results(student_id):
     # student can access thier own results

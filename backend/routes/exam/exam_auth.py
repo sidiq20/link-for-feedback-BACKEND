@@ -10,7 +10,7 @@ exam_auth_bp = Blueprint("exam_auth", __name__, url_prefix="/api/exam/auth")
 
 @exam_auth_bp.route("/register", methods=["POST"])
 @token_required
-def rsgister_for_exam():
+def register_for_exam():
     
     #     Body: { exam_code: str, student_id: str }
     try:
