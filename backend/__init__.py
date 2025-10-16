@@ -13,6 +13,7 @@ import uuid
 from redis import Redis
 from flask_socketio import SocketIO
 from flasgger import Swagger 
+from backend.routes.exam.exam_socket import socketio
 
 
 load_dotenv()
@@ -112,6 +113,7 @@ def create_app():
     
 
 
+    socketio.init_app(app, message_queue=app.config.get('REDIS_URL'))
     swagger_config = {
         "headers": [],
         "specs": [

@@ -33,3 +33,19 @@ def handle_heartbeat(data):
     # we might update ephemeral ping store in redis; for now ack
     emit('heartbeat_ack', {'ts': datetime.utcnow().isoformat()}, room=session_id)
     
+@socketio.on("proctor_event", namespace='ws/exam')
+def handle_request_event(data):
+    # data Example: { session_id, type: 'blue'|'copy'|'devtools', details: {...}}
+    try: 
+        session_id = data.get('session_id')
+        evt = {
+            'session_id': ObjectId(session_id),
+            'event_type': data.get('type'),
+            'details': data.get('details', {}),
+            'timestamp': datetime.utcnow()
+        }
+        current_app.mongo.db.protor_logs.insert_one(evt)
+        # optional count violations
+        emit('proctor_logged', {'ok': True}, room=session_id)
+    except Exception:
+        current_app.logger.exception('WS proctor event error')
