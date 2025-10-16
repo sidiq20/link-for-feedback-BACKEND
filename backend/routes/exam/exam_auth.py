@@ -71,4 +71,5 @@ def get_registered_exams():
             })
         return jsonify({"registration": out}), 200
     except Exception as e:
-        current_app.logger.exception
+            current_app.logger.exception("Get registered exams error")
+            return jsonify({"error": "Failed to fetch registrations"}), 500
