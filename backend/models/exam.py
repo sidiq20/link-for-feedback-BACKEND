@@ -17,8 +17,12 @@ def exam_doc(title, description, start_time, end_time, duration_seconds, owner_i
             "strict_mode": True,
             "randomize_question": True,
             "max_tab_switches": 3,
-            "auto_submit_on_violation": False
+            "auto_submit_on_violation": False,
+            "disable_copy_paste": True,
+            "disable_mutiple__monitors": True,
+            "disable_minimize": True,
         },
+        "examiners": [ObjectId(owner_id)],
         "question_count": 0,
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow()

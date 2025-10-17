@@ -3,6 +3,7 @@ import hashlib
 import hmac
 from flask import session, request 
 import uuid
+from werkzeug.security import generate_password_hash, check_password_hash
 
 def generate_csrf_token():
     """Generate csrf token for forms """
@@ -34,3 +35,8 @@ def secure_compare(a, b):
     """Securely compare two strings to prevent timing attacks"""
     return hmac.compare_digest(str(a), str(b)) 
 
+def hash_answer(answer_text: str) -> str:
+    return generate_password_hash(answer_text)
+
+def verify_answer(stored_hash: str, user_answer: str) -> bool:
+    return check_password_hash(stored_hash, user_answer)
