@@ -24,6 +24,7 @@ def exam_doc(title, description, start_time, end_time, duration_seconds, owner_i
         },
         "examiners": [ObjectId(owner_id)],
         "question_count": 0,
+        "invited_examiners": [],
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow()
     }

@@ -22,7 +22,7 @@ def register_for_exam():
             return jsonify({"error": "exam_code and student_id required"}), 400
         
         db = current_app.mongo.db
-        exam = db.exams.fine_one({"code": exam_code, "status": {"$in": ["published", "draft", "closed", "published"]}})
+        exam = db.exams.find_one({"code": exam_code, "status": {"$in": ["published", "draft", "closed", "published"]}})
         if not exam:
             return jsonify({"error": "Exam not found"}), 404
         
@@ -31,7 +31,7 @@ def register_for_exam():
         now = datetime.utcnow()
         if exam.get("start_time") and exam.get("end_time"):
             st = exam.get("start_time")
-            en = exam.get("wend_time")
+            en = exam.get("end_time")
             # if exam scheduled and registration outside allowed window -  we still allow register 
             # Here we dont block, but we add checks.
             

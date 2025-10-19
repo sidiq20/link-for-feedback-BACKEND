@@ -50,7 +50,7 @@ def create_exam():
 def publish_exam(exam_id):
     try:
         db = current_app.mongo.db
-        exam = db.exams.fine_one({"_id": ObjectId(exam_id)})
+        exam = db.exams.find_one({"_id": ObjectId(exam_id)})
         if not exam:
             return jsonify({"error": "Exam not found"}), 404
         if not require_exam_owner(exam):
