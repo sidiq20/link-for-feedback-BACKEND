@@ -106,6 +106,9 @@ def create_app():
     from backend.routes.exam.exam_result import exam_result_bp
     from backend.routes.exam.exam_portal import exam_portal_bp
     from backend.routes.exam.exam_invite import exam_invite_bp
+    from backend.routes.exam.exam_grading import exam_grading_bp
+    from backend.routes.exam.exam_answer import exam_answer_bp
+    from backend.routes.media_upload import media_upload_bp
     
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
@@ -123,6 +126,9 @@ def create_app():
     app.register_blueprint(exam_result_bp, url_prefix="/api/exam_result/")
     app.register_blueprint(exam_portal_bp, url_prefix="/api/exam_portal/")
     app.register_blueprint(exam_invite_bp, url_prefix='/api/exam_invite/')
+    app.register_blueprint(exam_grading_bp, url_prefix='/api/exam_grading')
+    app.register_blueprint(exam_answer_bp, url_prefix='/api/exam_answer')
+    app.register_blueprint(media_upload_bp, url_prefix='/api/media_upload')
 
 
     socketio.init_app(app, message_queue=app.config.get('REDIS_URL'))

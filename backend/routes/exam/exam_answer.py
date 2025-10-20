@@ -5,7 +5,7 @@ from backend.models.answer import answer_doc
 from bson import ObjectId
 from backend.utils.background import grade_exam_task
 
-exam_answer_bp = Blueprint('exam_answer', __name__, url_defaults='/api/exam/answer')
+exam_answer_bp = Blueprint('exam_answer', __name__, url_prefix='/api/exam/answer')
 
 @exam_answer_bp.route('/submit/', methods=['POST'])
 @token_required
