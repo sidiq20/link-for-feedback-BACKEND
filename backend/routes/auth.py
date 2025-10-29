@@ -98,6 +98,27 @@ def register():
             "updated_at": datetime.utcnow()
         }
         result = db.users.insert_one(user_doc)
+        send_email(
+            subject="Welcome to Whisper 🎉",
+            recipients=[email],
+            body=f"""
+                Hi there,
+
+                Welcome to Whisper! We're thrilled to have you on board.
+
+                Your account has been successfully created. Here are your details:
+
+                Email: {email}
+                Username: {name}
+
+                You can now log in to your account and start exploring all the features Whisper has to offer.
+
+                If you have any questions or need assistance, please don't hesitate to contact our support team.
+
+                Thanks,
+                Whisper Team
+                """
+        )
 
         logger.info(f"New user registered: {email}")
         return jsonify({
@@ -297,7 +318,7 @@ def forgot_password():
                 For security reasons, this link will expire in 30 minutes.
 
                 Thanks,
-                The Feedback App Team
+                Whisper Team
                 """
             )
 

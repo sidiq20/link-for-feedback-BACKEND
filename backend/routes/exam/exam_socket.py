@@ -33,7 +33,7 @@ def handle_heartbeat(data):
     # we might update ephemeral ping store in redis; for now ack
     emit('heartbeat_ack', {'ts': datetime.utcnow().isoformat()}, room=session_id)
     
-@socketio.on("proctor_event", namespace='ws/exam')
+@socketio.on("proctor_event", namespace='/ws/exam')
 def handle_request_event(data):
     # data Example: { session_id, type: 'blue'|'copy'|'devtools', details: {...}}
     try: 

@@ -53,7 +53,7 @@ def start_exam(exam_id):
     
 @exam_take_bp.route('/answer', methods=['POST'])
 @token_required
-def save_anwer():
+def save_answer():
     """
     Body: { session_id, question_id, answer, client_save_id? }
     Saves (auto-save) an answer. Light validation and append-only

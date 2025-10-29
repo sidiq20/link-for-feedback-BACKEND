@@ -87,9 +87,7 @@ def create_app():
         level=logging.DEBUG,
         format='%(asctime)s %(levelname)s %(name)s %(message)s'
     )
-    
-    
-    socketio.init_app(app)
+     
 
     from backend.routes.auth import auth_bp
     from backend.routes.feedback_links import feedback_links_bp

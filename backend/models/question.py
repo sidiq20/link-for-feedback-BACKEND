@@ -9,7 +9,7 @@ def hash_answer(answer):
         answer = "|".join(map(str, answer))
     return hashlib.sha256(answer.encode()).hexdigest()
 
-def question_doc(exam_id, qtype, prompt, options=None, answer_key=None, points=1, media=None, shuffle_options=True):
+def question_doc(exam_id, qtype, prompt, options=None, answer_key=None, points=1, media=None, shuffle_options=True, meta=None):
     # qtype: mcp, text,math, boolean, essay, fileupload, image_label
     # media: uploaded CLoudinary url or metadata dict
     
@@ -22,6 +22,7 @@ def question_doc(exam_id, qtype, prompt, options=None, answer_key=None, points=1
         "points": points,
         "media": media or [],
         "shuffle_options": shuffle_options,
+        "meta": meta or {},
         "created_at": datetime.utcnow(),
         "updated_at": datetime.utcnow()
     }

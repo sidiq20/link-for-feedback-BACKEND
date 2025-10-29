@@ -1,29 +1,37 @@
 import os
-import requests
+import sib_api_v3_sdk
+from sib_api_v3_sdk.rest import ApiException
 
-MAILGUN_API_KEY = os.getenv("MAILGUN_API_KEY")
-MAILGUN_DOMAIN = os.getenv("MAILGUN_DOMAIN")
-MAILGUN_FROM = os.getenv("MAILGUN_FROM")
+BREVO_API_KEY = os.getenv("BREVO_API_KEY")
+BREVO_SENDER_NAME = os.getenv("BREVO_SENDER_NAME", "Feedback App")
+BREVO_SENDER_EMAIL = os.getenv("BREVO_SENDER_EMAIL")
+
+configuration = sib_api_v3_sdk.Configuration()
+configuration.api_key['api-key'] = BREVO_API_KEY
 
 def send_email(subject, recipients, body):
     """
-    Send email using Mailgun HTTP API
+    Send email using Brevo (Sendinblue)
     """
-    if not MAILGUN_API_KEY or not MAILGUN_DOMAIN:
-        raise RuntimeError("Mailgun config missing (check .env)")
+    try:
+        api_instance = sib_api_v3_sdk.TransactionalEmailsApi(
+            sib_api_v3_sdk.ApiClient(configuration)
+        )
 
-    response = requests.post(
-        f"https://api.mailgun.net/v3/{MAILGUN_DOMAIN}/messages",
-        auth=("api", MAILGUN_API_KEY),
-        data={
-            "from": MAILGUN_FROM,
-            "to": recipients,
-            "subject": subject,
-            "text": body
-        }
-    )
+        # Support both string and list recipients
+        to_list = [{"email": recipients}] if isinstance(recipients, str) else [{"email": r} for r in recipients]
 
-    if response.status_code != 200:
-        raise RuntimeError(f"Mailgun API error: {response.status_code} {response.text}")
+        send_smtp_email = sib_api_v3_sdk.SendSmtpEmail(
+            sender={"name": BREVO_SENDER_NAME, "email": BREVO_SENDER_EMAIL},
+            to=to_list,
+            subject=subject,
+            text_content=body
+        )
 
-    return response.json()
+        response = api_instance.send_transac_email(send_smtp_email)
+        print(f"✅ Email sent to {recipients}: {response}")
+        return True
+
+    except ApiException as e:
+        print(f"❌ Brevo API error: {e}")
+        return False
