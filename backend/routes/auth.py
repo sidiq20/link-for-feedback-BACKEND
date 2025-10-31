@@ -98,27 +98,30 @@ def register():
             "updated_at": datetime.utcnow()
         }
         result = db.users.insert_one(user_doc)
+        login_url= url_for("auth_bp.login")
         send_email(
             subject="Welcome to Whisper 🎉",
             recipients=[email],
             body=f"""
-                Hi there,
+        Hi {name or 'there'},
 
-                Welcome to Whisper! We're thrilled to have you on board.
+        Welcome to **Whisper!** We’re thrilled to have you join our community.
 
-                Your account has been successfully created. Here are your details:
+        Your account has been successfully created. Here’s a quick recap of your details:
 
-                Email: {email}
-                Username: {name}
+        - **Email:** {email}  
+        - **Username:** {name}  
 
-                You can now log in to your account and start exploring all the features Whisper has to offer.
+        You can now log in and start exploring all the tools and features Whisper has to offer:
+        👉 [Log in to Your Account]({login_url})
 
-                If you have any questions or need assistance, please don't hesitate to contact our support team.
+        If you have any questions or need help, our support team is always here for you.
 
-                Thanks,
-                Whisper Team
-                """
+        Cheers,  
+        **The Whisper Team**
+        """
         )
+
 
         logger.info(f"New user registered: {email}")
         return jsonify({
@@ -300,27 +303,29 @@ def forgot_password():
                 email=email,
                 secret_key=current_app.config["SECRET_KEY"]
             )
-            reset_url = url_for("auth.reset_password", token=token, _external=True)
+            frontend_url = current_app.config["FRONTEND_URL"]
+            reset_url = f"{frontend_url}/reset-password/{token}"
+            name = data.get("name", "").strip()
             send_email(
-                subject="Reset Your Password",
+                subject="Reset Your Whisper Password 🔒",
                 recipients=[email],
                 body=f"""
-                Hi there,
+            Hi {name or 'there'},
 
-                We received a request to reset the password for your account.
+            We received a request to reset your Whisper account password.
 
-                Click the link below to reset your password:
-                {reset_url}
+            You can reset it by clicking the secure link below:
+            👉 {reset_url}
 
-                If you did not request this change, you can safely ignore this email — 
-                your password will remain unchanged.
+            This link will expire in **30 minutes** for security reasons.
 
-                For security reasons, this link will expire in 30 minutes.
+            If you didn’t request this, no worries — just ignore this message, and your password will stay the same.
 
-                Thanks,
-                Whisper Team
-                """
+            Stay safe,  
+            **The Whisper Team**
+            """
             )
+
 
 
 

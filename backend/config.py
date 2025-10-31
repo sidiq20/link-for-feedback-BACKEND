@@ -39,6 +39,7 @@ class Config:
     MAIL_USERNAME = os.getenv("SEND_EMAIL")
     MAIL_PASSWORD = os.getenv("SMTP_PASS")
     MAIL_DEFAULT_SENDER = os.getenv("SEND_EMAIL")
+    FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
  
     SECURITY_PASSWORD_SALT = os.getenv('SALT')
     

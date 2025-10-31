@@ -1,36 +1,78 @@
 from datetime import datetime
 from bson import ObjectId
 import hashlib
+import json
+
+
+def normalize_answer(value):
+    """
+    Normalize all kinds of answer types to a consistent format for hashing.
+    - Strips whitespace for strings.
+    - Converts booleans and numerics to canonical JSON values.
+    - Sorts keys in dicts and normalizes lists recursively.
+    """
+    if isinstance(value, str):
+        return value.strip().lower()  # normalize case for fairness
+    elif isinstance(value, (int, float, bool)):
+        return str(value).lower()
+    elif isinstance(value, dict):
+        return {k: normalize_answer(v) for k, v in sorted(value.items())}
+    elif isinstance(value, list):
+        return [normalize_answer(v) for v in value]
+    else:
+        return str(value)
+
 
 def hash_answer(answer):
-    if not answer:
-        return None
-    if isinstance(answer, list):
-        answer = "|".join(map(str, answer))
-    return hashlib.sha256(answer.encode()).hexdigest()
+    """
+    Hash any type of answer (text, list, dict, boolean, numeric, etc.)
+    using SHA-256 after normalization and JSON serialization.
+    """
+    normalized = normalize_answer(answer)
+    serialized = json.dumps(normalized, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
 
-def question_doc(exam_id, qtype, prompt, options=None, answer_key=None, points=1, media=None, shuffle_options=True, meta=None):
-    # qtype: mcp, text,math, boolean, essay, fileupload, image_label
-    # media: uploaded CLoudinary url or metadata dict
-    
-    question =  {
+
+def question_doc(
+    exam_id,
+    qtype,
+    prompt,
+    options=None,
+    answer_key=None,
+    points=1,
+    media=None,
+    shuffle_options=None,
+    meta=None
+):
+    """
+    Creates a well-structured question document for MongoDB.
+    Automatically hashes answer_key for all types.
+    All question types can include options and shuffle_options when provided.
+    """
+    question = {
         "_id": ObjectId(),
-        "exam_id": ObjectId(exam_id) if exam_id and not isinstance(exam_id, ObjectId)else exam_id,
+        "exam_id": ObjectId(exam_id) if exam_id and not isinstance(exam_id, ObjectId) else exam_id,
         "type": qtype,
         "prompt": prompt,
-        "options": options or [],
         "points": points,
         "media": media or [],
-        "shuffle_options": shuffle_options,
         "meta": meta or {},
         "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow()
+        "updated_at": datetime.utcnow(),
     }
-    
-    # only MCP or boolean question have answer keys
-    if qtype in ("mcq", "boolean"):
-        question["answer_key"] = hash_answer(answer_key)
+
+    # Only include options if explicitly provided
+    if options is not None:
+        question["options"] = options
+        # Include shuffle_options only when options are present
+        question["shuffle_options"] = shuffle_options if shuffle_options is not None else True
+
+    if answer_key is not None:
+        if isinstance(answer_key, list):
+            question["answer_key"] = [hash_answer(a) for a in answer_key]
+        else:
+            question["answer_key"] = hash_answer(answer_key)
     else:
         question["answer_key"] = None
-        
-    return question 
+
+    return question

@@ -1,9 +1,10 @@
 from flask import Blueprint, request, jsonify, current_app, g
 from backend.middleware.auth import token_required
 from backend.models.result import result_doc
+from backend.models.question import hash_answer, normalize_answer
 from datetime import datetime, timedelta
 from bson import ObjectId
-import uuid 
+import uuid
 
 exam_take_bp = Blueprint("exam_take", __name__, url_prefix="/api/exam/take")
 
@@ -67,8 +68,8 @@ def save_answer():
         if not session_id or not question_id:
             return jsonify({'error': 'session_id and question_id required'}), 400
         
-        db = current_app.mongo.bd
-        session = db.exam_session.find_one({'_id': ObjectId(session_id), 'user_id': ObjectId(g.current_user['_id'])})
+        db = current_app.mongo.db
+        session = db.exam_sessions.find_one({'_id': ObjectId(session_id), 'user_id': ObjectId(g.current_user['_id'])})
         if not session:
             return jsonify({'error': 'Session not found or not yours'}), 404
         
@@ -110,13 +111,13 @@ def submit_session():
         db.exam_sessions.update_one({'_id': session['_id']}, {'$set': {'status': 'submitted', 'ended_at': datetime.utcnow(), 'updated_at': datetime.utcnow()}})
         
         # mark result status
-        db.exams_results.update_one({'session_id': session['_id']}, {'$set': {'status': 'submitted', 'endded_at': datetime.utcnow(), 'updated_at': datetime.utcnow()}})
+        db.exam_results.update_one({'session_id': session['_id']}, {'$set': {'status': 'submitted', 'ended_at': datetime.utcnow(), 'updated_at': datetime.utcnow()}})
         
         # queue grading job - for now we do simple inline autograde for MCQ
         # fetch answers and grade MCQ
         exam_id = session['exam_id']
         questions = list(db.exam_questions.find({'exam_id': exam_id}))
-        answers_docs = list(db.exam_answers.find({'sessions_id': session['_id']}))
+        answers_docs = list(db.exam_answers.find({'session_id': session['_id']}))
         
         # map latest answer per question_id
         latest = {}
@@ -132,9 +133,12 @@ def submit_session():
             possible += q.get('points', 1)
             if q['type'] == 'mcq' and qid in latest:
                 given = latest[qid]['answer']
-                key = q.get('answer_key')
-                if given is not None and key is not None and str(given).strip() == str(key).strip():
-                    total_score += q.get('points', 1)
+                stored_hash = q.get('answer_key')
+                if given is not None and stored_hash is not None:
+                    # Hash the user's answer and compare with stored hash
+                    given_hash = hash_answer(given)
+                    if given_hash == stored_hash:
+                        total_score += q.get('points', 1)
                 # text answers marked for manual review (skip)
                     
         
