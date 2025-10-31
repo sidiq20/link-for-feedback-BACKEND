@@ -98,7 +98,8 @@ def register():
             "updated_at": datetime.utcnow()
         }
         result = db.users.insert_one(user_doc)
-        login_url= url_for("auth_bp.login")
+        login_url = current_app.config["FRONTEND_URL"]
+        login_url = f"{login_url}/login"
         send_email(
             subject="Welcome to Whisper 🎉",
             recipients=[email],
