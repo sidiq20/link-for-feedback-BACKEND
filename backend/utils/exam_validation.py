@@ -149,5 +149,5 @@ def is_valid_student_id(student_id):
 
 def generate_student_id():
     year = datetime.utcnow().year
-    code = random.randint(1000, 9999)
+    code = random.randint(10000, 99999)
     return f"STU-{year}-{code}"

@@ -1,5 +1,5 @@
 import os
-from datetime import timedelta
+from datetime import timedelta, datetime
 from dotenv import load_dotenv
 from pymongo import MongoClient
 from pymongo.errors import ConnectionFailure
@@ -90,7 +90,18 @@ def ensure_ttl_indexes(mongo):
         db.users.create_index([("email", ASCENDING)], unique=True, name="unique_email")
         db.users.create_index([("name", ASCENDING)], unique=True, name="unique_name")
         
+    db.refresh_tokens.create_index("expires_at", expireAfterSeconds=0)
+    print("TTL index for refresh_tokens created")
+        
 def to_objectid(value):
     if isinstance(value, ObjectId):
         return value 
     return ObjectId(str(value))
+
+def delete_expired_refresh_tokens(mongo):
+    db = mongo.db
+    now = datetime.utcnow()
+    result = db.refresh_tokens.delete_many({
+        "expires_at": {"$lt": now}
+    })
+    print(f"🧹 Deleted {result.deleted_count} expired refresh tokens.")

@@ -3,7 +3,7 @@ from flask_session import Session
 from flask_cors import CORS
 from datetime import timedelta
 import logging
-from .config import Config, test_mongo_connection, ensure_ttl_indexes, ensure_unique_indexes
+from .config import Config, test_mongo_connection, ensure_ttl_indexes, ensure_unique_indexes, delete_expired_refresh_tokens
 from backend.extensions import limiter, mail
 from dotenv import load_dotenv
 import os
@@ -59,9 +59,15 @@ def create_app():
     app.config['MAIL_DEFAULT_SENDER'] = os.getenv('SEND_EMAIL')
     mail.init_app(app)
 
-    app.config["SESSION_TYPE"] = "redis"
-    app.config["SESSION_REDIS"] = Redis.from_url(REDIS_URL)
+    REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
     
+    if REDIS_URL.startswith("rediss://"):
+        redis_client = Redis.from_url(REDIS_URL, ssl=True)
+    else:
+        redis_client = Redis.from_url(REDIS_URL)
+        
+    app.config["SESSION_TYPE"] = "redis"
+    app.config["SESSION_REDIS"] = redis_client
     app.config["RATELIMIT_STORAGE_URL"] = REDIS_URL
     
     app.config['SESSION_PERMANENT'] = False
@@ -127,6 +133,8 @@ def create_app():
     app.register_blueprint(exam_grading_bp, url_prefix='/api/exam_grading')
     app.register_blueprint(exam_answer_bp, url_prefix='/api/exam_answer')
     app.register_blueprint(media_upload_bp, url_prefix='/api/media_upload')
+    
+    delete_expired_refresh_tokens(app.mongo)
 
 
     socketio.init_app(app, message_queue=app.config.get('REDIS_URL'))

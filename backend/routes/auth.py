@@ -221,7 +221,7 @@ def login():
             "expires_at": datetime.utcnow() + timedelta(days=7)
         })
 
-        access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in=9000)  
+        access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in=90000)  
         logger.info(f"User logged in: {identifier}")
         return jsonify({
             "message": "Login successful",
