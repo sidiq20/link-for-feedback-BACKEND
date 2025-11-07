@@ -4,6 +4,28 @@ import hmac
 from flask import session, request 
 import uuid
 from werkzeug.security import generate_password_hash, check_password_hash
+from cryptography.fernet import Fernet, InvalidToken
+from typing import Any, List, Union
+import logging
+import json 
+import os 
+import base64
+
+logger = logging.getLogger(__name__)
+
+FERNET_KEY = os.environ.get("FERNET_KEY")
+if not FERNET_KEY:
+    FERNET_KEY = Fernet.generate_key().decode()
+    logger.warning(
+        "FERNET_KEY not found in environment. Generated ephemeral key — "
+        "this is fine for dev but *must* be set in production!"
+    )
+    
+def get_fernet() -> Fernet:
+    return Fernet(FERNET_KEY.encode())
+
+
+
 
 def generate_csrf_token():
     """Generate csrf token for forms """

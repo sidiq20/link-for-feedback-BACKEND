@@ -4,7 +4,7 @@ from flask_cors import CORS
 from datetime import timedelta
 import logging
 from .config import Config, test_mongo_connection, ensure_ttl_indexes, ensure_unique_indexes, delete_expired_refresh_tokens
-from backend.extensions import limiter, mail
+from backend.extensions import init_redis, limiter, mail
 from dotenv import load_dotenv
 import os
 from flask_pymongo import PyMongo
@@ -69,6 +69,7 @@ def create_app():
     app.config["SESSION_TYPE"] = "redis"
     app.config["SESSION_REDIS"] = redis_client
     app.config["RATELIMIT_STORAGE_URL"] = REDIS_URL
+    init_redis()
     
     app.config['SESSION_PERMANENT'] = False
     app.config['SESSION_USE_SIGNER'] = True
@@ -76,6 +77,8 @@ def create_app():
     app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=24)
     app.config['SECRET_KEY'] = app.config.get('SECRET_KEY') or secrets.token_hex(16)
     app.config['SESSION_COOKIE_NAME'] = app.config.get('SESSION_COOKIE_NAME', 'session')
+
+
 
     Session(app)
 
@@ -113,6 +116,7 @@ def create_app():
     from backend.routes.exam.exam_grading import exam_grading_bp
     from backend.routes.exam.exam_answer import exam_answer_bp
     from backend.routes.media_upload import media_upload_bp
+    from backend.routes.health import health_bp
     
 
     app.register_blueprint(auth_bp, url_prefix='/auth')
@@ -133,6 +137,7 @@ def create_app():
     app.register_blueprint(exam_grading_bp, url_prefix='/api/exam_grading')
     app.register_blueprint(exam_answer_bp, url_prefix='/api/exam_answer')
     app.register_blueprint(media_upload_bp, url_prefix='/api/media_upload')
+    app.register_blueprint(health_bp)
     
     delete_expired_refresh_tokens(app.mongo)
 
@@ -153,6 +158,8 @@ def create_app():
         "specs_route": "/docs/"  # Swagger UI available at /docs
     }
     Swagger(app, config=swagger_config)
+    
+
 
     @app.errorhandler(404)
     def not_found(error):

@@ -8,7 +8,7 @@ from pymongo.errors import DuplicateKeyError
 import logging
 import jwt
 import uuid
-
+from backend.extensions import redis_client, mongo
 from backend.utils.validation import validate_email, validate_password, generate_token, verify_token
 from backend.utils.mailer import send_email
 
@@ -214,14 +214,21 @@ def login():
             return jsonify({"error": "Invalid email or password"}), 401
 
         refresh_token = str(uuid.uuid4())
+        
+        access_token = create_jwt(
+            {"user_id": str(user["_id"]), "email": user["email"]}, expires_in=90000
+        )
+        
         db.refresh_tokens.insert_one({
             "token": refresh_token,
             "user_id": str(user["_id"]),
             "created_at": datetime.utcnow(),
             "expires_at": datetime.utcnow() + timedelta(days=7)
         })
-
-        access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in=90000)  
+        
+        redis_key = f"user_session:{user['_id']}"
+        redis_client.setex(redis_key, 86400, access_token)
+          
         logger.info(f"User logged in: {identifier}")
         return jsonify({
             "message": "Login successful",
