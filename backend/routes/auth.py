@@ -9,6 +9,8 @@ import logging
 import jwt
 import uuid
 from backend.extensions import redis_client, mongo
+from google.oauth2 import id_token
+from google.auth.transport import requests as grequests
 from backend.utils.validation import validate_email, validate_password, generate_token, verify_token
 from backend.utils.mailer import send_email
 
@@ -414,3 +416,84 @@ def get_current_user():
         "name": user.get("name")
     })
 
+
+@auth_bp.route("/google", methods=["GET"])
+def google_auth_url():
+    client_id = current_app.config["GOOGLE_CLIENT_ID"]
+    redirect_uri = f"{current_app.config['BACKEND_URL']}/api/auth/google/callback"
+    
+    google_url = (
+        "https://accounts.google.com/o/oauth2/v2/auth"
+        "?response_type=code"
+        f"&client_id={client_id}"
+        f"&redirect_uri={redirect_uri}"
+        "&scope=openid%20email%20profile"
+    )
+
+    return jsonify({"url": google_url})
+
+@auth_bp.route("/google/callback", methods=["GET"])
+def google_callback():
+    code = request.args.get("code")
+    if not code:
+        return jsonify({"error": "Missing Google code"}), 400
+
+    token_url = "https://oauth2.googleapis.com/token"
+    redirect_uri = f"{current_app.config['BACKEND_URL']}/api/auth/google/callback"
+
+    data = {
+        "code": code,
+        "client_id": current_app.config["GOOGLE_CLIENT_ID"],
+        "client_secret": current_app.config["GOOGLE_CLIENT_SECRET"],
+        "redirect_uri": redirect_uri,
+        "grant_type": "authorization_code",
+    }
+
+    token_res = requests.post(token_url, data=data).json()
+    if "id_token" not in token_res:
+        return jsonify({"error": "Google token exchange failed"}), 400
+
+    # Verify Google token
+    idinfo = id_token.verify_oauth2_token(
+        token_res["id_token"], grequests.Request(), current_app.config["GOOGLE_CLIENT_ID"]
+    )
+
+    email = idinfo.get("email")
+    name = idinfo.get("name")
+    google_id = idinfo.get("sub")
+    email_verified = idinfo.get("email_verified", False)
+
+    db = get_db()
+
+    user = db.users.find_one({"email": email})
+
+    if not user:
+        # Create Google user
+        user_doc = {
+            "email": email,
+            "name": name,
+            "provider": "google",
+            "google_id": google_id,
+            "password": None,
+            "email_verified": email_verified,
+            "is_active": True,
+            "created_at": datetime.utcnow(),
+            "updated_at": datetime.utcnow()
+        }
+        result = db.users.insert_one(user_doc)
+        user = db.users.find_one({"_id": result.inserted_id})
+
+    # Generate our JWT + refresh token
+    access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in=90000)
+    refresh_token = str(uuid.uuid4())
+
+    db.refresh_tokens.insert_one({
+        "token": refresh_token,
+        "user_id": str(user["_id"]),
+        "created_at": datetime.utcnow(),
+        "expires_at": datetime.utcnow() + timedelta(days=7)
+    })
+
+    frontend_redirect = f"{current_app.config['FRONTEND_URL']}/auth/callback?access={access_token}&refresh={refresh_token}"
+
+    return jsonify({"redirect": frontend_redirect})

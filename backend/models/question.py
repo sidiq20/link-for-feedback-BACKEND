@@ -2,6 +2,7 @@ from datetime import datetime
 from bson import ObjectId
 import hashlib
 import json
+from backend.utils.security import hash_answer, encrypt_answer
 
 
 def normalize_answer(value):
@@ -45,9 +46,6 @@ def question_doc(
     meta=None
 ):
     """
-    Creates a well-structured question document for MongoDB.
-    Automatically hashes answer_key for all types.
-    All question types can include options and shuffle_options when provided.
     """
     question = {
         "_id": ObjectId(),
@@ -69,10 +67,13 @@ def question_doc(
 
     if answer_key is not None:
         if isinstance(answer_key, list):
-            question["answer_key"] = [hash_answer(a) for a in answer_key]
+            question["answer_key_hash"] = [hash_answer(a) for a in answer_key]
+            question["answer_key_encrypted"] = encrypt_answer(answer_key)
         else:
-            question["answer_key"] = hash_answer(answer_key)
+            question["answer_key_hash"] = hash_answer(answer_key)
+            question["answer_key_encrypted"] = encrypt_answer(answer_key)
     else:
-        question["answer_key"] = None
+        question["answer_key_hash"] = None 
+        question["answer_key_encrypted"] = None
 
     return question

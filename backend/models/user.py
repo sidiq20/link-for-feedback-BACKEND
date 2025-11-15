@@ -9,11 +9,12 @@ def create_user(email, password, name=""):
     hashed_password = generate_password_hash(password)
     user_data = {
         "email": email,
+        "name": name,
+        "is_verified": False,
         "password": hashed_password,
         "is_active": True,
         "created_at": datetime.utcnow(),
-        "updated_at": datetime.utcnow(),
-        "name": name  
+        "updated_at": datetime.utcnow()
     }
     result = mongo.db[USERS_COLLECTION].insert_one(user_data)
     return str(result.inserted_id)

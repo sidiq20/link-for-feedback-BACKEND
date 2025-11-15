@@ -31,6 +31,9 @@ class Config:
     MAX_CONTENT_LENGTH = 16 * 1024 * 1024  
     WTF_CSRF_ENABLED = True
     WTF_CSRF_TIME_LIMIT = None
+    BACKEND_URL = os.getenv('BACKEND_URL')
+    GOOGLE_CLIENT_ID = os.getenv('GOOGLE_CLIENT_ID')
+    GOOGLE_CLIENT_SECRET = os.getenv('GOOGLE_CLIENT_SECRET')
     
     MAIL_SERVER = "smtp.gmail.com"
     MAIL_PORT = 465
