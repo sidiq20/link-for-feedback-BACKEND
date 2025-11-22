@@ -1,167 +1,112 @@
 from functools import wraps
-from flask import session, jsonify, request, current_app, g
+from flask import request, jsonify, g, current_app
 from bson import ObjectId
-from datetime import datetime, timezone
 import jwt
-import os
-from pymongo import MongoClient
-from backend.extensions import redis_client  # ✅ import the initialized Redis client
+from backend.extensions import redis_client
 
+# ---------------------------
+# Helpers
+# ---------------------------
 
-# Mongo client (if not already managed elsewhere)
-client = MongoClient(os.getenv("MONGO_URI"))
-db = client[os.getenv("MONGO_DB")]
-
-
-# ------------------ JWT HELPERS ------------------ #
-
-def extract_token_from_header():
-    """Safely extract Bearer token from Authorization header."""
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
+def _get_bearer_token():
+    auth = request.headers.get("Authorization", "")
+    if not auth or not auth.startswith("Bearer "):
         return None
-    return auth_header.split("Bearer ")[1].strip()
+    return auth.split("Bearer ", 1)[1].strip()
 
-
-def verify_jwt(token):
-    """Decode and validate a JWT token using the app's secret key."""
+def _decode_jwt(token):
     if not token:
-        return jsonify({"error": "Missing token"}), 401
+        return None, ("Missing token", 401)
     try:
-        return jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
+        payload = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
+        return payload, None
     except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Token expired"}), 401
+        return None, ("Token expired", 401)
     except jwt.InvalidTokenError:
-        return jsonify({"error": "Invalid token"}), 401
-
-
-# ------------------ DECORATORS ------------------ #
-
-def _verify_token_core():
-    """Internal helper to verify JWT and session fallback."""
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        return jsonify({"error": "Missing or invalid Authorization header"}), 401
-
-    token = auth_header.split("Bearer ")[1].strip()
-
-    # Step 1: Verify JWT signature and expiration
-    try:
-        decoded = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
-    except jwt.ExpiredSignatureError:
-        return jsonify({"error": "Token expired"}), 401
-    except jwt.InvalidTokenError:
-        return jsonify({"error": "Invalid token"}), 401
-
-    user_id = decoded.get("user_id")
-    if not user_id:
-        return jsonify({"error": "Invalid token: missing user_id"}), 401
-
-    # Step 2: Try to verify active session in Redis
-    redis_ok = False
-    try:
-        if redis_client:
-            redis_token = redis_client.get(f"user_session:{user_id}")
-            if isinstance(redis_token, bytes):
-                redis_token = redis_token.decode()
-
-            if redis_token and redis_token == token:
-                redis_ok = True
+        return None, ("Invalid token", 401)
     except Exception as e:
-        current_app.logger.warning(f"⚠️ Redis check failed, fallback to Mongo: {e}")
+        current_app.logger.exception(f"Unexpected JWT decode error: {e}")
+        return None, ("Invalid token", 401)
 
-    # Step 3: Fallback to MongoDB if Redis fails or user not cached
-    user = None
+def _is_jti_blacklisted(jti):
+    if not jti:
+        return False
     try:
-        user = current_app.mongo.db.users.find_one({"_id": ObjectId(user_id)})
+        if not redis_client:
+            return False
+        # exists returns 1 if key exists
+        return bool(redis_client.exists(f"blacklist:{jti}"))
     except Exception as e:
-        current_app.logger.error(f"MongoDB user fetch failed: {e}")
-        return jsonify({"error": "User lookup failed"}), 500
+        # Don't fail hard if Redis is down; log and continue
+        current_app.logger.warning(f"Redis blacklist check failed: {e}")
+        return False
 
-    if not user:
-        return jsonify({"error": "User not found"}), 404
+def _load_user(user_id):
+    try:
+        user = current_app.mongo.db.users.find_one({"_id": ObjectId(user_id), "is_active": True})
+        return user
+    except Exception as e:
+        current_app.logger.exception(f"MongoDB user lookup failed: {e}")
+        return None
 
-    # Step 4: Security enforcement — require Redis confirmation if available
-    if not redis_ok and redis_client:
-        return jsonify({"error": "Session expired or invalid"}), 401
+# ---------------------------
+# Decorators
+# ---------------------------
 
-    # Attach user to context for downstream use
-    g.current_user = user
-    g.token_payload = decoded
-    return None  # means all good
+def jwt_required(func):
+    """
+    Validate JWT, check jti blacklist, load user, and attach:
+      - g.current_user -> full user document
+      - request.user_id  -> string user id (for code that expects it)
+    """
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        token = _get_bearer_token()
+        if not token:
+            return jsonify({"error": "Authorization header missing or invalid"}), 401
 
+        payload, err = _decode_jwt(token)
+        if err:
+            msg, code = err
+            return jsonify({"error": msg}), code
 
-def jwt_required(f):
-    """Decorator for verifying JWT (gracefully uses Mongo fallback)."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        result = _verify_token_core()
-        if result is not None:
-            return result
-        return f(*args, **kwargs)
-    return decorated
+        user_id = payload.get("user_id")
+        jti = payload.get("jti")
 
+        if not user_id:
+            return jsonify({"error": "Malformed token: missing user_id"}), 401
+        if not jti:
+            return jsonify({"error": "Malformed token: missing jti"}), 401
 
-def token_required(f):
-    """Same as jwt_required but enforces Redis session when available."""
-    @wraps(f)
-    def decorated(*args, **kwargs):
-        result = _verify_token_core()
-        if result is not None:
-            return result
-        return f(*args, **kwargs)
-    return decorated
+        # Blacklist check
+        if _is_jti_blacklisted(jti):
+            return jsonify({"error": "Token revoked"}), 401
 
-def require_auth(f):
-    """Decorator to require user authentication"""
-    @wraps(f)
-    def decorated_function(*args, **kwargs):
-        if 'user_id' not in session:
-            return jsonify({'error': 'Authentication required'}), 401
-        
+        # Load user from DB
+        user = _load_user(user_id)
+        if user is None:
+            return jsonify({"error": "User not found"}), 404
+
+        # Attach contexts for compatibility with existing code
+        g.current_user = user
+        # attach user_id both to request and g for compatibility (some code uses request.user_id)
         try:
-            user = current_app.mongo.db.users.find_one({
-                "_id": ObjectId(session['user_id']),
-                "is_active": True
-            })
-            if not user:
-                session.clear()
-                return jsonify({'error': 'Invalid session'}), 401
-
-            # Attach user to request context
-            request.current_user = user
-
+            # request is a proxy, setting attribute directly is fine for short-lived per-request usage
+            request.user_id = str(user["_id"])
         except Exception:
-            session.clear()
-            return jsonify({'error': 'Authentication error'}), 401
+            # If setting on request fails for whatever reason, still attach to g
+            current_app.logger.debug("Could not set request.user_id; falling back to g.current_user only")
+        # also attach on g
+        g.user_id = str(user["_id"])
+        g.token_payload = payload
+        g.jti = jti
 
-        return f(*args, **kwargs)
-    return decorated_function
+        return func(*args, **kwargs)
 
-def require_ownership(collection_name, param_name='id'):
-    """Decorator to require ownership of a resource in a given collection"""
-    def decorator(f):
-        @wraps(f)
-        @require_auth
-        def decorated_function(*args, **kwargs):
-            resource_id = kwargs.get(param_name) or request.view_args.get(param_name)
-            if not resource_id:
-                return jsonify({'error': 'Resource ID required'}), 400
+    return wrapper
 
-            try:
-                resource = current_app.mongo.db[collection_name].find_one({
-                    "_id": ObjectId(resource_id),
-                    "owner": ObjectId(request.current_user["_id"])
-                })
-
-                if not resource:
-                    return jsonify({'error': 'Resource not found or access denied'}), 404
-
-                request.current_resource = resource
-
-            except Exception:
-                return jsonify({'error': 'Invalid resource ID'}), 400
-
-            return f(*args, **kwargs)
-        return decorated_function
-    return decorator
+def token_required(func):
+    """
+    Alias for jwt_required so legacy code using @token_required keeps working.
+    """
+    return jwt_required(func)

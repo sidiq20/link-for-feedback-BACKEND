@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app, url_for, g
+from flask import Blueprint, request, jsonify, current_app, url_for, g, make_response
 from werkzeug.security import generate_password_hash, check_password_hash
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -8,6 +8,7 @@ from pymongo.errors import DuplicateKeyError
 import logging
 import jwt
 import uuid
+import requests
 from backend.extensions import redis_client, mongo
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
@@ -18,14 +19,18 @@ auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
 
 
-
 def get_db():
     return current_app.mongo.db
 
 
-def create_jwt(payload, expires_in):
+# --- JWT helpers ---
+
+def create_jwt(payload, expires_in_seconds=900):
+    """Create a JWT with a jti and short expiry (default 15 minutes = 900s)."""
     payload_copy = payload.copy()
-    payload_copy["exp"] = datetime.utcnow() + timedelta(seconds=expires_in)
+    payload_copy["exp"] = datetime.utcnow() + timedelta(seconds=expires_in_seconds)
+    payload_copy["iat"] = datetime.utcnow()
+    payload_copy["jti"] = str(uuid.uuid4())
     return jwt.encode(payload_copy, current_app.config["SECRET_KEY"], algorithm="HS256")
 
 
@@ -38,30 +43,125 @@ def decode_jwt(token):
         return None
 
 
-def jwt_required(func):
-    from functools import wraps
+def blacklist_access_token(jti, expires_in_seconds=None):
+    """Store a token jti in redis blacklist with TTL until token expiry."""
+    try:
+        if not redis_client:
+            return
+        key = f"blacklist:{jti}"
+        ttl = expires_in_seconds if expires_in_seconds else 60 * 60 * 24
+        redis_client.setex(key, ttl, "1")
+    except Exception:
+        logger.exception("Failed to blacklist token in redis")
 
+
+def is_token_blacklisted(jti):
+    try:
+        if not redis_client:
+            return False
+        return bool(redis_client.get(f"blacklist:{jti}"))
+    except Exception:
+        logger.exception("Redis check failed")
+        return False
+
+
+# wrapper that validates JWT + non-blacklisted jti and attaches user to request
+from functools import wraps
+
+
+def jwt_required(func):
     @wraps(func)
     def wrapper(*args, **kwargs):
         auth_header = request.headers.get("Authorization", "")
-        logger.debug(f"Authorization header: {auth_header}")
         if not auth_header.startswith("Bearer "):
-            logger.debug("Authorization header missing or invalid")
             return jsonify({"error": "Authorization header missing or invalid"}), 401
 
-        token = auth_header.split(" ")[1]
-        logger.debug(f"Token received: {token}")
+        token = auth_header.split(" ", 1)[1]
         payload = decode_jwt(token)
         if not payload:
-            logger.debug("Invalid or expired token")
             return jsonify({"error": "Invalid or expired token"}), 401
 
+        jti = payload.get("jti")
+        if not jti:
+            return jsonify({"error": "Malformed token"}), 401
+
+        if is_token_blacklisted(jti):
+            return jsonify({"error": "Token revoked"}), 401
+
+        # attach user id/email for handlers
         request.user_id = payload.get("user_id")
-        logger.debug(f"user_id from token: {request.user_id}")
+        request.user_email = payload.get("email")
+
+        # optionally load user into g
+        db = get_db()
+        try:
+            user = db.users.find_one({"_id": ObjectId(request.user_id), "is_active": True})
+            if not user:
+                return jsonify({"error": "User not found"}), 404
+            g.current_user = user
+        except Exception:
+            return jsonify({"error": "Invalid user id in token"}), 401
+
         return func(*args, **kwargs)
 
     return wrapper
 
+
+# --- Refresh token helpers ---
+
+def set_refresh_cookie(response, refresh_token, max_age_days=7):
+    secure_flag = current_app.config.get("USE_HTTPS", False)
+    response.set_cookie(
+        "refresh_token",
+        refresh_token,
+        httponly=True,
+        secure=secure_flag,
+        samesite="Strict",
+        max_age=max_age_days * 24 * 3600,
+        path="/api/auth/refresh"
+    )
+
+
+def clear_refresh_cookie(response):
+    response.delete_cookie("refresh_token", path="/api/auth/refresh")
+
+
+def store_refresh_token_in_db(token, user_id, expires_days=7, replaced_by=None):
+    db = get_db()
+    doc = {
+        "token": token,
+        "user_id": str(user_id),
+        "created_at": datetime.utcnow(),
+        "expires_at": datetime.utcnow() + timedelta(days=expires_days),
+        "revoked": False,
+        "replaced_by": replaced_by,
+    }
+    db.refresh_tokens.insert_one(doc)
+    return doc
+
+
+def revoke_refresh_token(token, reason="user_logout"):
+    db = get_db()
+    db.refresh_tokens.update_one({"token": token}, {"$set": {"revoked": True, "revoked_at": datetime.utcnow(), "revoked_reason": reason}})
+
+
+def rotate_refresh_token(old_token):
+    db = get_db()
+    old = db.refresh_tokens.find_one({"token": old_token})
+    if not old:
+        return None
+
+    if old.get("revoked"):
+        return None
+
+    # mark old revoked and create a new one
+    new_token = str(uuid.uuid4())
+    db.refresh_tokens.update_one({"token": old_token}, {"$set": {"revoked": True, "revoked_at": datetime.utcnow()}})
+    store_refresh_token_in_db(new_token, old["user_id"])  # default 7 days
+    return new_token
+
+
+# --- Routes ---
 
 @auth_bp.route("/register", methods=["POST"])
 def register():
@@ -76,7 +176,7 @@ def register():
 
         is_valid_email, normalized_email = validate_email(email)
         if not is_valid_email:
-            return jsonify({"error": "Invalid email format"}), 400      
+            return jsonify({"error": "Invalid email format"}), 400
         email = normalized_email
 
         is_valid_password, password_message = validate_password(password)
@@ -87,7 +187,7 @@ def register():
 
         if db.users.find_one({"email": email}):
             return jsonify({"error": "User already exists"}), 400
-        
+
         if db.users.find_one({"name": name}):
             return jsonify({"error": "Username already exists"}), 400
 
@@ -100,7 +200,7 @@ def register():
             "updated_at": datetime.utcnow()
         }
         result = db.users.insert_one(user_doc)
-        login_url = current_app.config["FRONTEND_URL"]
+        login_url = current_app.config.get("FRONTEND_URL", "")
         login_url = f"{login_url}/login"
         send_email(
             subject="Welcome to Whisper 🎉",
@@ -125,7 +225,6 @@ def register():
         """
         )
 
-
         logger.info(f"New user registered: {email}")
         return jsonify({
             "message": "Registration successful",
@@ -135,7 +234,7 @@ def register():
                 "name": name
             }
         }), 201
-        
+
     except DuplicateKeyError as e:
         if "email" in str(e):
             return jsonify({"error": "Email already exists"}), 400
@@ -148,53 +247,8 @@ def register():
         return jsonify({"error": f"Registration failed: {str(e)}"}), 500
 
 
-
-
 @auth_bp.route("/login", methods=["POST"])
 def login():
-    """
-    User login
-    ---
-    tags:
-      - Authentication
-    consumes:
-      - application/json
-    parameters:
-      - in: body
-        name: body
-        required: true
-        schema:
-          type: object
-          required:
-            - email
-            - password
-          properties:
-            email:
-              type: string
-            password:
-              type: string
-    responses:
-      200:
-        description: Login success
-        schema:
-          type: object
-          properties:
-            message:
-              type: string
-            access_token:
-              type: string
-            refresh_token:
-              type: string
-            user:
-              type: object
-              properties:
-                _id:
-                  type: string
-                email:
-                  type: string
-                name:
-                  type: string
-    """
     try:
         data = request.get_json() or {}
         identifier = data.get("email", "").strip().lower()
@@ -210,91 +264,121 @@ def login():
             query["email"] = identifier
         else:
             query["name"] = identifier
-            
+
         user = db.users.find_one(query)
-        if not user or not check_password_hash(user["password"], password):
+        if not user or not user.get("password") or not check_password_hash(user["password"], password):
             return jsonify({"error": "Invalid email or password"}), 401
 
+        # Create tokens
+        access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in_seconds=900)
         refresh_token = str(uuid.uuid4())
-        
-        access_token = create_jwt(
-            {"user_id": str(user["_id"]), "email": user["email"]}, expires_in=90000
-        )
-        
-        db.refresh_tokens.insert_one({
-            "token": refresh_token,
-            "user_id": str(user["_id"]),
-            "created_at": datetime.utcnow(),
-            "expires_at": datetime.utcnow() + timedelta(days=7)
-        })
-        
-        redis_key = f"user_session:{user['_id']}"
-        redis_client.setex(redis_key, 86400, access_token)
-          
+
+        # persist refresh token in DB
+        store_refresh_token_in_db(refresh_token, user["_id"])
+
+        # Optionally store session in redis: (keeps track of active sessions)
+        try:
+            if redis_client:
+                redis_client.setex(f"user_session:{user['_id']}", 7 * 24 * 3600, refresh_token)
+        except Exception:
+            logger.exception("Redis session write failed")
+
         logger.info(f"User logged in: {identifier}")
-        return jsonify({
+        response = jsonify({
             "message": "Login successful",
             "access_token": access_token,
-            "refresh_token": refresh_token,
             "user": {
                 "_id": str(user["_id"]),
                 "email": user["email"],
                 "name": user.get("name"),
-                
             }
-        }), 200
+        })
+
+        set_refresh_cookie(response, refresh_token)
+        return response, 200
 
     except Exception:
         logger.exception("Login error")
         return jsonify({"error": "Login failed"}), 500
 
 
-
 @auth_bp.route("/refresh", methods=["POST"])
 def refresh():
     try:
-        data = request.get_json() or {}
-        refresh_token = data.get("refresh_token", "")
-
+        refresh_token = request.cookies.get("refresh_token")
         if not refresh_token:
-            return jsonify({"error": "Refresh token is required"}), 400
+            return jsonify({"error": "Missing refresh token"}), 401
 
         db = get_db()
-        stored_token = db.refresh_tokens.find_one({"token": refresh_token})
-        if not stored_token:
+        stored = db.refresh_tokens.find_one({"token": refresh_token})
+        if not stored:
             return jsonify({"error": "Invalid refresh token"}), 401
 
-        if stored_token["expires_at"] < datetime.utcnow():
+        if stored.get("revoked"):
+            return jsonify({"error": "Refresh token revoked"}), 401
+
+        if stored.get("expires_at") < datetime.utcnow():
             db.refresh_tokens.delete_one({"token": refresh_token})
             return jsonify({"error": "Refresh token expired"}), 401
 
-        user = db.users.find_one({"_id": ObjectId(stored_token["user_id"]), "is_active": True})
+        user = db.users.find_one({"_id": ObjectId(stored["user_id"]), "is_active": True})
         if not user:
             return jsonify({"error": "User not found"}), 404
 
-        access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in=900)
+        # Rotate refresh token (invalidate old, issue new)
+        new_refresh = rotate_refresh_token(refresh_token)
+        if not new_refresh:
+            return jsonify({"error": "Refresh token rotation failed"}), 401
 
-        return jsonify({"access_token": access_token}), 200
+        # Issue a new short-lived access token
+        access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in_seconds=900)
+
+        # Blacklist old access token if client sent it (optional)
+        # If client sends old access token in Authorization header, mark its jti as revoked
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            old_token = auth_header.split(" ", 1)[1]
+            old_payload = decode_jwt(old_token)
+            if old_payload and old_payload.get("jti"):
+                exp = old_payload.get("exp")
+                ttl = int(exp - datetime.utcnow().timestamp()) if exp else 60
+                blacklist_access_token(old_payload.get("jti"), expires_in_seconds=max(ttl, 60))
+
+        response = jsonify({"access_token": access_token})
+        set_refresh_cookie(response, new_refresh)
+        return response, 200
 
     except Exception:
         logger.exception("Refresh token error")
         return jsonify({"error": "Failed to refresh token"}), 500
 
 
-
 @auth_bp.route("/logout", methods=["POST"])
 def logout():
     try:
-        data = request.get_json() or {}
-        refresh_token = data.get("refresh_token", "")
-        if refresh_token:
-            get_db().refresh_tokens.delete_one({"token": refresh_token})
+        # Prefer cookie-based logout: read refresh token from cookie
+        refresh_token = request.cookies.get("refresh_token")
 
-        return jsonify({"message": "Logged out successfully"}), 200
+        if refresh_token:
+            revoke_refresh_token(refresh_token, reason="user_logout")
+
+        # If client provided Authorization header, blacklist access token jti
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header.split(" ", 1)[1]
+            payload = decode_jwt(token)
+            if payload and payload.get("jti"):
+                exp = payload.get("exp")
+                ttl = int(exp - datetime.utcnow().timestamp()) if exp else 60
+                blacklist_access_token(payload.get("jti"), expires_in_seconds=max(ttl, 60))
+
+        response = jsonify({"message": "Logged out successfully"})
+        clear_refresh_cookie(response)
+        return response, 200
+
     except Exception:
         logger.exception("Logout error")
         return jsonify({"error": "Logout failed"}), 500
-
 
 
 @auth_bp.route("/forgot-password", methods=["POST"])
@@ -313,7 +397,7 @@ def forgot_password():
                 email=email,
                 secret_key=current_app.config["SECRET_KEY"]
             )
-            frontend_url = current_app.config["FRONTEND_URL"]
+            frontend_url = current_app.config.get("FRONTEND_URL", "")
             reset_url = f"{frontend_url}/reset-password/{token}"
             name = data.get("name", "").strip()
             send_email(
@@ -335,10 +419,6 @@ def forgot_password():
             **The Whisper Team**
             """
             )
-
-
-
-
 
         return jsonify({"message": "If that email exists, a reset link has been sent"}), 200
 
@@ -391,7 +471,7 @@ def reset_password():
         if result.matched_count == 0:
             return jsonify({"error": "User not found"}), 404
 
-        db.refresh_tokens.delete_many({"email": email})
+        db.refresh_tokens.delete_many({"user_id": str(result.upserted_id)})
 
         db.used_tokens.insert_one({
             "token": token,
@@ -421,7 +501,7 @@ def get_current_user():
 def google_auth_url():
     client_id = current_app.config["GOOGLE_CLIENT_ID"]
     redirect_uri = f"{current_app.config['BACKEND_URL']}/api/auth/google/callback"
-    
+
     google_url = (
         "https://accounts.google.com/o/oauth2/v2/auth"
         "?response_type=code"
@@ -431,6 +511,7 @@ def google_auth_url():
     )
 
     return jsonify({"url": google_url})
+
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
@@ -449,11 +530,13 @@ def google_callback():
         "grant_type": "authorization_code",
     }
 
-    token_res = requests.post(token_url, data=data).json()
+    # Use requests to exchange code for tokens
+    token_res = requests.post(token_url, data=data, timeout=10).json()
     if "id_token" not in token_res:
+        logger.exception(f"Google token exchange failed: {token_res}")
         return jsonify({"error": "Google token exchange failed"}), 400
 
-    # Verify Google token
+    # Verify Google ID token
     idinfo = id_token.verify_oauth2_token(
         token_res["id_token"], grequests.Request(), current_app.config["GOOGLE_CLIENT_ID"]
     )
@@ -484,16 +567,80 @@ def google_callback():
         user = db.users.find_one({"_id": result.inserted_id})
 
     # Generate our JWT + refresh token
-    access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in=90000)
+    access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in_seconds=900)
     refresh_token = str(uuid.uuid4())
 
-    db.refresh_tokens.insert_one({
-        "token": refresh_token,
-        "user_id": str(user["_id"]),
-        "created_at": datetime.utcnow(),
-        "expires_at": datetime.utcnow() + timedelta(days=7)
-    })
+    store_refresh_token_in_db(refresh_token, user["_id"])
 
     frontend_redirect = f"{current_app.config['FRONTEND_URL']}/auth/callback?access={access_token}&refresh={refresh_token}"
 
     return jsonify({"redirect": frontend_redirect})
+
+
+@auth_bp.route("/send-verification", methods=["POST"])
+@token_required
+def send_verification():
+    try:
+        user = g.current_user
+
+        if user.get("is_verified"):
+            return jsonify({"message": "Email already verified"}), 200
+
+        token = generate_token(
+            salt=current_app.config["SECURITY_PASSWORD_SALT"],
+            email=user["email"],
+            secret_key=current_app.config["SECRET_KEY"]
+        )
+
+        verify_url = f"{current_app.config['FRONTEND_URL']}/verify-email/{token}"
+
+        send_email(
+            subject="Verify Your Whisper Email ✔️",
+            recipients=[user["email"]],
+            body=f"""
+        Hi {user.get('name', 'there')},
+
+        Please verify your Whisper account email by clicking the link below:
+
+        👉 {verify_url}
+
+        The link expires in **30 minutes**.
+
+        If you didn’t create this account, please ignore this message.
+        """
+        )
+
+        return jsonify({"message": "Verification email sent"}), 200
+
+    except Exception as e:
+        logger.exception("Verification email error")
+        return jsonify({"error": "Could not send verification email"}), 500
+
+
+@auth_bp.route("/verify-email/<token>", methods=["GET"])
+def verify_email(token):
+    try:
+        email = verify_token(
+            token=token,
+            secret_key=current_app.config["SECRET_KEY"],
+            salt=current_app.config["SECURITY_PASSWORD_SALT"],
+            max_age=3600   # 1 hour
+        )
+
+        if not email:
+            return jsonify({"error": "Invalid or expired token"}), 400
+
+        db = get_db()
+        result = db.users.update_one(
+            {"email": email},
+            {"$set": {"is_verified": True, "updated_at": datetime.utcnow()}}
+        )
+
+        if result.modified_count == 0:
+            return jsonify({"error": "User not found"}), 404
+
+        return jsonify({"message": "Email verified successfully"}), 200
+
+    except Exception as e:
+        logger.exception("Email verification error")
+        return jsonify({"error": "Verification failed"}), 500

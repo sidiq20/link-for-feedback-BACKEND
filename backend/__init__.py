@@ -119,7 +119,7 @@ def create_app():
     from backend.routes.health import health_bp
     
 
-    app.register_blueprint(auth_bp, url_prefix='/auth')
+    app.register_blueprint(auth_bp, url_prefix='/api/auth')
     app.register_blueprint(feedback_links_bp, url_prefix='/api/links')
     app.register_blueprint(feedback_bp, url_prefix='/api/feedback')
     app.register_blueprint(analytics_bp, url_prefix='/api/analytics')
