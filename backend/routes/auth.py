@@ -9,7 +9,7 @@ import logging
 import jwt
 import uuid
 import requests
-from backend.extensions import redis_client, mongo
+from backend.extensions import redis_client, mongo, limiter
 from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
 from backend.utils.validation import validate_email, validate_password, generate_token, verify_token
@@ -248,6 +248,7 @@ def register():
 
 
 @auth_bp.route("/login", methods=["POST"])
+@limiter.limit('5 per minute')
 def login():
     try:
         data = request.get_json() or {}
@@ -493,7 +494,8 @@ def get_current_user():
     return jsonify({
         "id": str(user["_id"]),
         "email": user["email"],
-        "name": user.get("name")
+        "name": user.get("name"),
+        "student": user.get("student_id") if "student_id" else None
     })
 
 

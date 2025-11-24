@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 from bson import ObjectId
 import uuid
 import jwt
+from backend.extensions import limiter
 
 from backend.routes.exam.exam_socket import push_progress_update
 
@@ -197,6 +198,7 @@ def save_answer():
     
 @exam_take_bp.route('/submit', methods=['POST'])
 @token_required
+@limiter.limit('3 per minute')
 def submit_session():
     '''
     Body: { session_id }

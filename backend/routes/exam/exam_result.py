@@ -1,10 +1,12 @@
 from flask import Blueprint, request, jsonify, current_app, g
 from backend.middleware.auth import token_required
 from bson import ObjectId
+from backend.extensions import limiter
 
 exam_result_bp = Blueprint('exam_result', __name__, url_prefix="/api/exam/results/")
 
 @exam_result_bp.route("/<exam_id>/all/", methods=['GET'])
+@limiter.limit('5 per minute')
 @token_required
 def exam_results_all(exam_id):
     # only exam owner should access

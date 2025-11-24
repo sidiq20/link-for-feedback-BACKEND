@@ -8,7 +8,7 @@ exam_grading_bp = Blueprint('exam_grading', __name__, url_prefix='/api/exam_grad
 
 @exam_grading_bp.route('/trigger/<exam_id>', methods=['POST'])
 @token_required
-@limiter.limit('3 per minute')
+@limiter.limit('10 per minute')
 def trigger_grading(exam_id):
     """Manually trigger background grading. """
     try:

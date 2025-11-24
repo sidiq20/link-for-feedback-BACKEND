@@ -3,7 +3,7 @@ from backend.utils.exam_validation import sanitize_student_id, is_valid_objectid
 from bson import ObjectId
 from datetime import datetime
 from backend.middleware.auth import token_required
-from backend.extensions import mongo
+from backend.extensions import mongo, limiter
 from backend.models.exam_registration import registration_doc
 from backend.utils.mailer import send_email
 
@@ -12,6 +12,7 @@ exam_auth_bp = Blueprint("exam_auth", __name__, url_prefix="/api/exam/auth")
 
 @exam_auth_bp.route("/register", methods=["POST"])
 @token_required
+@limiter.limit('5 per minute')
 def register_for_exam():
     """
     Registers the current user for an exam.
@@ -89,6 +90,7 @@ def register_for_exam():
     
 @exam_auth_bp.route("/registred", methods=["GET"])
 @token_required
+@limiter.limit('5 per minute')
 def get_registered_exams():
     # return list of registration for current users
     try:
@@ -112,6 +114,7 @@ def get_registered_exams():
         
 @exam_auth_bp.route("/create-student-id", methods=["POST"])
 @token_required
+@limiter.limit('5 per minute')
 def create_student_id():
     """
     Allows a logged-in user to create (or retrieve) their student_id.

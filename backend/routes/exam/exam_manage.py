@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify, current_app, g
 from backend.utils.exam_validation import validate_exam_payload, validate_question_payload
 from backend.models.exam import exam_doc
 from backend.models.question import question_doc
+from backend.extensions import limiter
 from datetime import datetime 
 from bson import ObjectId
 from backend.middleware.auth import token_required
@@ -14,6 +15,7 @@ def require_exam_owner(exam):
 
 @exam_manage_bp.route("/create", methods=["POST"])
 @token_required
+@limiter.limit('5 per minute')
 def create_exam():
     """
     body: {title, description, start_time, endtime, duration, code, settings}
@@ -48,6 +50,7 @@ def create_exam():
     
 @exam_manage_bp.route("/<exam_id>/publish", methods=["POST"])
 @token_required
+@limiter.limit('10 per minute')
 def publish_exam(exam_id):
     try:
         db = current_app.mongo.db
@@ -65,6 +68,7 @@ def publish_exam(exam_id):
     
 @exam_manage_bp.route("/<exam_id>/questions", methods=["POST"])
 @token_required
+@limiter.limit('10 per minute')
 def add_questions(exam_id):
     """
     Add multiple questions in one request.
