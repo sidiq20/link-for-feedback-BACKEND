@@ -148,3 +148,98 @@ def add_questions(exam_id):
     except Exception as e:
         current_app.logger.exception("Add questions upload error")
         return jsonify({"error": "Failed to add questions", "details": str(e)}), 500
+
+
+exam_manage_bp.route("/<exam_id>/update", methods=["PUT", "PATCH"])
+@token_required
+@limiter.limit("10 per minute")
+def update_exam(exam_id):
+    """
+    Update an exam. only allowed for the owner.
+    Accepts partial updates.
+    body: {title?, description}
+    """
+    try:
+        data = request.get_json() or {}
+        if not data:
+            return jsonify({"error": "Request body is empty"}), 400
+        
+        db = current_app.mongo.db
+        exam = db.exams.find_one({"_id": ObjectId(exam_id)})
+        
+        db = current_app.mongo.db
+        exam = db.exams.find_one({"_id": ObjectId(exam_id)})
+        if not exam:
+            return jsonify({"errror": "Exam not found"}), 404
+        
+        if not require_exam_owner(exam):
+            return jsonify({"error": "Forbideen"}), 403
+        
+        update_fields = {}
+        
+        if "title" in data:
+            update_fields["title"] = data["title"]
+            
+        if "description" in data:
+            update_fields["description"] = data["description"]
+            
+        if "start_time" in data:
+            update_fields["start_time"] = data["start_time"]
+            
+        if "end_time" in data:
+            update_fields["end_time"] = data["end_time"]
+            
+        if "duration_seconds" in data:
+            update_fields["duration_seconds"] = int(data["duration_seconds"])
+            
+        if "code" in data:
+            new_code = data["code"].strip()
+            exist = db.exams.find_one({"code": new_code, "_id": {"$ne": exam["_id"]}})
+            if exist:
+                return jsonify({"error": 'Exam code already taken'})
+            update_fields["code"] = new_code 
+            if "settings" in data:
+                update_fields["settings"] = data["settings"]
+                
+            update_fields["updated_at"] = datetime.utcnow()
+            
+            if not update_fields:
+                return jsonify({"error": "No valid field to update"}), 400
+            
+            db.exams.update_one({"_id": exam["_id"]}, {"$set": update_fields})
+            
+            return jsonify({"message": "Exam updated successfully"}), 200
+        
+    except Exception as e:
+        current_app.logger.exception("Update exam error")
+        return jsonify({"error": "failed to update exam", "details": str(e)}), 500
+    
+    
+    
+@exam_manage_bp.route("/<exam_id>/delete"w, methods=["DELETE"])
+@token_required
+@limiter.limit("10 per minute")
+def delete_exam(exam_id):
+    """
+    Delete an exam and all its associated questions.
+    Only the owner can delete
+    """
+    try:
+        db = current_app.mongo.db
+        
+        exam = db.exams.find_one({"_id": ObjectId(exam_id)})
+        if not exam:
+            return jsonify({"error": "Exam not found"}), 404
+        
+        if not require_exam_owner(exam):
+            return jsonify({"error": "Forbidden"}), 403
+        
+        db.exam_questions.delete_many({"exam_id": exam["_id"]})
+        
+        db.exams.delete_one({"_id": exam['_id']})
+        
+        return jsonify({"message": "Exam deleted successsufully"}), 200
+    
+    except Exception as e:
+        current_app.logger.exception("Deleted exam error")
+        return jsonify({"error": "Failed to delete exam", "details": str(e)}), 500

@@ -164,6 +164,7 @@ def rotate_refresh_token(old_token):
 # --- Routes ---
 
 @auth_bp.route("/register", methods=["POST"])
+@limiter.limit('5 per minute')
 def register():
     try:
         data = request.get_json() or {}
@@ -500,6 +501,7 @@ def get_current_user():
 
 
 @auth_bp.route("/google", methods=["GET"])
+@limiter.limit('3 per minute')
 def google_auth_url():
     client_id = current_app.config["GOOGLE_CLIENT_ID"]
     redirect_uri = f"{current_app.config['BACKEND_URL']}/api/auth/google/callback"
@@ -580,6 +582,7 @@ def google_callback():
 
 
 @auth_bp.route("/send-verification", methods=["POST"])
+@limiter.limit('3 per minute')
 @token_required
 def send_verification():
     try:
