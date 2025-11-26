@@ -2,12 +2,46 @@ from flask import Blueprint, request, jsonify, current_app, g, url_for
 from backend.middleware.auth import token_required
 from backend.extensions import mongo, limiter
 from bson import ObjectId
-from datetime import datetime
+from datetime import datetime, timedelta
 from backend.utils.mailer import send_email  # your Brevo sender
 from backend.routes.exam.exam_manage import add_questions
+import secrets
 
 exam_invite_bp = Blueprint('exam_invite', __name__, url_prefix='/api/exam/invite')
 
+def now_utc():
+    return datetime.utcnow()
+
+def make_token():
+    return secrets.token_urlsafe(32)
+
+def log_exam_action(exam_id, action, actor_id=None, details=None):
+    db = current_app.mongo.db
+    entry = {
+        "exam_id": ObjectId(exam_id) if not isinstance(exam_id, ObjectId) else exam_id,
+        "action": action,
+        "actor_id": ObjectId(actor_id) if actor_id else None,
+        "timestamp": now_utc(),
+        "details": details or {}
+    }
+    
+def ensure_eam_and_owner(exam_id):
+    db = current_app.mong.db
+    exam = db.exams.find_one({"_id": ObjectId(exam_id)})
+    if not exam:
+        return None, jsonify({"error": "Exam not found"}), 404
+    return exam, None, None
+
+def permission_defaults_for_role(role):
+    # Default permission mapping by role (adjust to taste)
+    role_map = {
+        "owner":      {"can_edit_settings": True, "can_add_questions": True, "can_grade": True, "can_invite": True},
+        "co-owner":   {"can_edit_settings": True, "can_add_questions": True, "can_grade": True, "can_invite": True},
+        "moderator":  {"can_edit_settings": True, "can_add_questions": False, "can_grade": True, "can_invite": False},
+        "grader":     {"can_edit_settings": False, "can_add_questions": False, "can_grade": True, "can_invite": False},
+        "viewer":     {"can_edit_settings": False, "can_add_questions": False, "can_grade": False, "can_invite": False},
+    }
+    return role_map.get(role, role_map["viewer"]).copy()
 
 # --- SEARCH USERS BY EMAIL ---
 @exam_invite_bp.route('/search', methods=['GET'])
@@ -39,6 +73,7 @@ def search_user_by_email():
     except Exception as e:
         current_app.logger.exception("Search user error")
         return jsonify({"error": "Failed to search users", "details": str(e)}), 500
+
 
 
 # --- INVITE EXAMINERS ---

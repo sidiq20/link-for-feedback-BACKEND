@@ -216,7 +216,7 @@ def update_exam(exam_id):
     
     
     
-@exam_manage_bp.route("/<exam_id>/delete"w, methods=["DELETE"])
+@exam_manage_bp.route("/<exam_id>/delete", methods=["DELETE"])
 @token_required
 @limiter.limit("10 per minute")
 def delete_exam(exam_id):
