@@ -5,7 +5,7 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 from backend.utils.mailer import send_email  # your Brevo sender
 from backend.routes.exam.exam_manage import add_questions
-from backend.utils.exam_invite_helper import now_utc, make_token, log_exam_action, ensure_exam_and_owner
+from backend.utils.exam_invite_helper import now_utc, make_token, log_exam_action, ensure_exam_and_owner, permission_defaults_for_role
 
 exam_invite_bp = Blueprint('exam_invite', __name__, url_prefix='/api/exam/invite')
 
@@ -294,3 +294,173 @@ def accept_invite(token):
     except Exception as e:
         current_app.logger.exception("accept_invite error")
         return jsonify({"error": str(e)}), 500
+    
+    
+
+@exam_invite_bp.route('/<invite_id>/revoke', methods=['POST'])
+@token_required
+def revoke_invite(invite_id):
+    """
+    Revoke an invite by invite_id. only owner/co-owner or those with permission can revoke
+    """
+    try:
+        db = current_app.mongo.db 
+        actor = g.current_user
+        actor_id = actor.get("_id")
+        
+        invite = db.invites.find_one({"_id": ObjectId(invite_id)})
+        if not invite:
+            return jsonify({'error': 'invite not found'}), 404
+        
+        exam = db.exams.find_one({"_id": invite["exam_id"]})
+        if not exam:
+            return jsonify({"error": "Exam not found"}), 404
+        
+        is_owner = str(actor_id) == str(exam.get("owner_id"))
+        is_coowner = False 
+        for ex in exam.get("examiners", []):
+            if isinstance(ex, dict) and str(ex.get("_id")) == str(actor_id) and ex.get("role") == "co-owner":
+                is_coowner = True 
+                break
+            
+            
+        if not (is_owner or is_coowner):
+            return jsonify({"error": "not authorized to revoke invite"}), 403
+        
+        db.invites.update_one({"_id": ObjectId(invite_id)}, {"$set": {"status": 'revoked', 'revoked_at': now_utc(), "revoked_by": ObjectId(actor_id)}})
+        
+        log_exam_action(invite['exam_id'], 'invite_revoked', actor_id, {"invite_id": invite_id})
+        
+        return jsonify({"message": "Invite revoked"}), 200
+    
+    except Exception as e:
+        current_app.logger.exception("revoke_invite error")
+        return jsonify({'error': str(e)}), 500
+    
+    
+@exam_invite_bp.route("/<exam_id>/remove_examiner", methods=["POST"])
+@token_required
+def remove_examiner(exam_id):
+    """
+    Body {"examiner_id": "<user_id>"}
+    removes an examiner from an exam completely Owner cannot remove themselves via the route (special case)
+    """
+    try:
+        db = current_app.mongo.db 
+        data = request.get_json() or {}
+        target_id = data.get("examiner_id")
+        if not target_id:
+            return jsonify({"error": "examiner_id required"}), 400
+        
+        actor = g.current_user
+        actor_id = actor.get("_id")
+        
+        exam = db.exams.find_one({"_id": ObjectId(exam_id)})
+        if not exam:
+            return jsonify({'error': 'exam not found'}), 404
+        
+        is_owner = str(actor_id) == str(exam.get("owner_id"))
+        is_coowner = False
+        for ex in exam.get("examiners", []):
+            if isinstance(ex, dict) and str(ex.get("_id")) == str(actor_id) and ex.get("role") == "co-ownwer":
+                is_coowner = True 
+                break 
+            
+        if not (is_owner or is_coowner):
+            return jsonify({'error': 'not autorized to remove examiner'}), 403
+        
+        db.exams.update_one(
+            {'_id': ObjectId(exam_id)},
+            {'$pull': {'examiners': {'_id': ObjectId(target_id)}}}
+        )
+        
+        db.invites.update_many(
+            {'exam_id': ObjectId(exam_id), '$or': [{'user_id': ObjectId(target_id)}, {'email': {'$in'}}]},
+            {"$set": {'status': 'revoked', 'revoked_at': now_utc(), 'revoked_by': ObjectId(actor_id)}}
+        )
+        
+        log_exam_action(exam_id, 'examiner_removed', actor_id, {'removed_examiner_id': str(target_id)})
+        
+        return jsonify({'message': 'Examiner removed'}), 200
+    
+    except Exception as e:
+        current_app.logger.exception("remove_examiner error")
+        return jsonify({'error': str(e)}), 500
+    
+
+@exam_invite_bp.route('/<exam_id>/update_perssions', methods=['POST'])
+@token_required
+def update_examiner_permissions(exam_id):
+    """
+    Body:
+    {
+        "examiner_id": '<user_id>',
+        "permissions": {
+            'can_add_questions': false, 'can_grade': true, ..
+        }
+        'role': 'grader' # optional
+    }
+    """
+    try:
+        db = current_app.mongo.db 
+        data = request.get_json() or {}
+        examiner_id = data.get("examiner_id")
+        new_perms = data.get("permissions")
+        new_role = data.get('role')
+        
+        if not examiner_id or not new_perms:
+            return jsonify({'error': 'examiner_id and persmissions are required'}), 400
+        
+        actor = g.current_user
+        actor_id = actor.get('_id')
+        
+        exam = db.exams.find_one({
+            '_id': ObjectId(exam_id)
+        })
+        if not exam:
+            return jsonify({'error': 'exam not found'}), 404
+        
+        # permission check: onwer or co-owner or the actor has can_edit
+        is_onwer = str(actor_id) == str(exam.get("owner_id"))
+        has_permission = False
+        if is_onwer:
+            has_permission = True
+        else:
+            for ex in exam.get("examiners", []):
+                if isinstance(ex, dict) and str(ex.get('_id')) == str(actor_id):
+                    if ex.get('role') in ('owner', 'co_owner') or ex.get('permissions', {}).get('can_edit_settings'):
+                        has_permission = True 
+                    break 
+        
+        if not has_permission:
+            return jsonify({'error': 'not authorized to update persmissions'}), 403
+        
+        # update the examiner entry in exam.examiners (array of dicts)
+        db.exams.update_one(
+            {'_id': ObjectId(exam_id), 'examiners._id': ObjectId(examiner_id)},
+            {'$set': {'examiners.$.permissions': new_perms, **({'examiners.$.new_role'} if new_role else {})}}
+        )
+        
+        log_exam_action(exam_id, 'examiner_permissions_updated', actor_id, {'examiner_id': examiner_id, 'permissions': new_perms, 'role': new_role})
+        
+        return jsonify({'message': 'permissions updated'}), 200
+    
+    except Exception as e:
+        current_app.logger.exception("update_examiner_permissions error")
+        return jsonify({'error': str(e)}), 500
+    
+
+@exam_invite_bp.route('<exam_id>/list', methods=['GET'])
+@token_required
+def list_examiners_and_invite(exam_id):
+    """returns examiner + pending invites (pedning invites only visible to owner and co-owner)
+    Examiners see other examiners and their permissions
+    """
+    try:
+        db = current_app.mongo.db
+        exam = db.exams.find_one({'_id': ObjectId(exam_id)})
+        if not exam:
+            return jsonify({'error': 'Exam not found'})
+        
+        actor = g.current_user
+        actor_id = actor.get
