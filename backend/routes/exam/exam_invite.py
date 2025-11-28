@@ -5,43 +5,10 @@ from bson import ObjectId
 from datetime import datetime, timedelta
 from backend.utils.mailer import send_email  # your Brevo sender
 from backend.routes.exam.exam_manage import add_questions
-import secrets
+from backend.utils.exam_invite_helper import now_utc, make_token, log_exam_action, ensure_exam_and_owner
 
 exam_invite_bp = Blueprint('exam_invite', __name__, url_prefix='/api/exam/invite')
 
-def now_utc():
-    return datetime.utcnow()
-
-def make_token():
-    return secrets.token_urlsafe(32)
-
-def log_exam_action(exam_id, action, actor_id=None, details=None):
-    db = current_app.mongo.db
-    entry = {
-        "exam_id": ObjectId(exam_id) if not isinstance(exam_id, ObjectId) else exam_id,
-        "action": action,
-        "actor_id": ObjectId(actor_id) if actor_id else None,
-        "timestamp": now_utc(),
-        "details": details or {}
-    }
-    
-def ensure_eam_and_owner(exam_id):
-    db = current_app.mong.db
-    exam = db.exams.find_one({"_id": ObjectId(exam_id)})
-    if not exam:
-        return None, jsonify({"error": "Exam not found"}), 404
-    return exam, None, None
-
-def permission_defaults_for_role(role):
-    # Default permission mapping by role (adjust to taste)
-    role_map = {
-        "owner":      {"can_edit_settings": True, "can_add_questions": True, "can_grade": True, "can_invite": True},
-        "co-owner":   {"can_edit_settings": True, "can_add_questions": True, "can_grade": True, "can_invite": True},
-        "moderator":  {"can_edit_settings": True, "can_add_questions": False, "can_grade": True, "can_invite": False},
-        "grader":     {"can_edit_settings": False, "can_add_questions": False, "can_grade": True, "can_invite": False},
-        "viewer":     {"can_edit_settings": False, "can_add_questions": False, "can_grade": False, "can_invite": False},
-    }
-    return role_map.get(role, role_map["viewer"]).copy()
 
 # --- SEARCH USERS BY EMAIL ---
 @exam_invite_bp.route('/search', methods=['GET'])
@@ -151,3 +118,179 @@ def invite_examiner(exam_id):
     except Exception as e:
         current_app.logger.exception('Invite examiner error')
         return jsonify({'error': str(e)}), 500
+
+
+@exam_invite_bp.route("/<exam_id>/create", methods=['POST'])
+@token_required
+@limiter.limit('5 per minute')
+def create_invite_link(exam_id):
+    """
+    Body:
+    {
+      "email": "invitee@example.com",
+      "role": "grader" | "moderator" | "co-owner" | "viewer",
+      "expires_in_minutes": 1440,      # optional time based expiry integer
+      "permissions_overrides": { ... } # optional per-user booleans
+    }
+    behavior:
+      - creates a single-use token link for the invitee email (if user exists, user_id stored).
+      - deactivates any previously active invite for the same exam+email.
+      - sends email with the link.
+    """
+    try:
+        db = current_app.db 
+        data = request.get_json() or {}
+        email = (data.get("email") or "").strip().lower()
+        role = data.get("role", "viewer")
+        expires_in = data.get("expires_in_minutes") or {}
+        overrides = data.get("permissions_overrides") or {}
+        
+        if not email:
+            return jsonify({"error": "email is required"}), 400
+        
+        exam = db.exams.find_one({"_id": ObjectId(exam_id)})
+        if not exam:
+            return jsonify({"error": "Exam not found"}), 404
+        
+        # enforce only owner/c0-owner or users with invite permission should create invites
+        actor = g.current_user # token_required should set g.current_user
+        actor_id = actor.get("_id")
+        # quick permission check: only owner/co-owner or those with can_invite in exam.examiners
+        exam_owner_id = exam.get("owner_id")
+        exam_examiners = exam.get("examiners", [])
+        allowed = False
+        if str(actor_id) == str(exam_owner_id):
+            allowed = True 
+        else:
+            for ex in exam_examiners:
+                ex_id = ex if isinstance(ex, ObjectId) else (ex.get("_id") if isinstance(ex, dict) else ex)
+                if str(ex_id) == str(actor_id):
+                    # if exam stores roles/permissions in exam.examiners as dicts...check that
+                    if isinstance(ex, dict):
+                        if ex.get("permissions", {}).get("can_invite") or ex.get("role") in ("owner", "co-owner"):
+                            allowed = True
+                    else:
+                        allowed = False
+                    break 
+        if not allowed:
+            return jsonify({"error": "not authorized to send invites"}), 403
+        
+        user = db.users.find_one({"email": email})
+        user_id = user["_id"] if user else None 
+        
+        token = make_token()
+        created_at = now_utc()
+        expires_at = None 
+        if isinstance(expires_in, (int, float)) and expires_in > 0:
+            expires_at = created_at + timedelta(minutes=int(expires_in))
+            
+        # revoke any existing active invites for this exam+email
+        db.invites.update_many(
+            {"exam_id": ObjectId(exam_id), "email": email, "status": "pending"},
+            {"$set": {"status": "revoked", "revoked_at": now_utc(), "revoked_by": ObjectId(actor_id)}}
+        )
+        
+        invite_doc = {
+            "exam_id": ObjectId(exam_id),
+            "user_id": ObjectId(user_id) if user_id else None,
+            "email": email,
+            "token": token,
+            "role": role,
+            "permissions": {**permission_defaults_for_role(role), **(overrides or {})},
+            "status": "pending",
+            "created_by": created_at,
+            "expires_at": expires_at,
+            "accepted_at": None,
+            "accepted_by": None
+        }
+        
+        result = db.invites.insert_one(invite_doc)
+        
+        accept_url = url_for("exam_invite.accept_invite", token=token, _external=True)
+        
+        subject = f"Invitation to be an examiner for '{exam.get('title', 'Untitled Exam')}'"
+        body = f"""
+        Hello, you have been invited to participate as an examiner (role: {role}) for the exam "{exam.get('title', 'Untitled Exam')}".
+        Please accept the invitation by clicking the link below:
+        
+        {accept_url}
+        
+        this link will {'expire at ' + expires_at.isoformat() if expires_at else 'remain valid until revoked'}.
+        
+        if you did not expect this, ignore this message.
+        
+        Thanks,
+        Whisper Team
+        """
+        
+        send_email(subject, email, body)
+        
+        log_exam_action(exam_id, "invite_created", actor_id, {"invite_id": str(result.inserted_id), "email": email, "role": role})
+        
+        return jsonify({"message": "Invite created and email sent", "invite_id": str(result.inserted_id), "accept_url": accept_url}), 201
+    
+    except Exception as e:
+        current_app.logger.exception("create_invite_link error")
+        return jsonify({"error": str(e)}), 500
+    
+    
+@exam_invite_bp.route('/accept/<token>', methods=['GET', 'POST'])
+@token_required
+def accept_invite(token):
+    # to accept invite by token, user must be authenticated 
+    try:
+        db = current_app.mongo.db
+        invite = db.invites.find_one({"token": token})
+        if not invite:
+            return jsonify({"error": "invlid invite token"}), 404
+        
+        # check status/expiry
+        if invite.get("status") != "pending":
+            return jsonify({"error": f"Invite is not pending (status={invite.get('status')})"}), 404
+        
+        expires_at = invite.get("expires_at")
+        if expires_at and isinstance(expires_at, datetime) and now_utc() > expires_at:
+            # mark expired
+            db.update_one({"_id": invite["_id"]}, {"$set": {"status": "expired", "expired_at": now_utc()}})
+            log_exam_action(invite["exam_id"], "invite_expired", None, {"invite_id": str(invite["_id"])})
+            return jsonify({"error": "Invite has expired"}), 400
+        
+        actor = g.current_user
+        actor_id = actor.get("_id")
+        actor_email = (actor.get("email") or "").lower()
+        
+        if invite.get("email") and invite.get("email").lower() != actor_email:
+            return jsonify({"error": "This invite was sent to a diffrent email"}), 403
+        
+        exam_id = invite["exam_id"]
+        exam = db.exams.find_one({"_id": ObjectId(exam_id)})
+        if not exam:
+            return jsonify({"error": "Exam not found"}), 404
+        
+        examiner_entry = {
+            "_id": ObjectId(actor_id),
+            "role": invite.get("role"),
+            "permissions": invite.get("permissions", {}),
+            "added_at": now_utc(),
+            "added_by_invite": True
+        }
+        
+        db.exams.update_one(
+            {"_id": ObjectId(exam_id)},
+            {"$addToSet": {"examiners": examiner_entry}}
+        )
+        
+        # mark invite accepted
+        db.invites.update_one(
+            {"_id": invite["_id"]},
+            {"$set": {"status": "accepted", "accepted_at": now_utc(), "accepted_by": ObjectId(actor_id)}}
+        )
+        
+        # loggsss again
+        log_exam_action(exam_id, 'invite_accepted', actor_id, {"invite_id": str(invite["_id"]), "role": invite.get("role")})
+        
+        return jsonify({"message": 'invite accepted', 'exam_id': str(exam_id)}), 200
+    
+    except Exception as e:
+        current_app.logger.exception("accept_invite error")
+        return jsonify({"error": str(e)}), 500
