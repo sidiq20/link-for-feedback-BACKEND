@@ -81,3 +81,7 @@ wrapt==1.17.2
 wsproto==1.2.0
 gunicorn==23.0.0
 eventlet==0.40.4
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
