@@ -5,6 +5,7 @@ bidict==0.23.1
 billiard==4.2.2
 blinker==1.9.0
 cachelib==0.13.0
+cachetools==6.2.2
 celery==5.5.3
 certifi==2025.8.3
 cffi==1.17.1
@@ -20,6 +21,7 @@ defusedxml==0.7.1
 Deprecated==1.2.18
 dnspython==2.7.0
 email-validator==2.0.0
+eventlet==0.40.4
 flasgger==0.9.7.1
 Flask==3.1.1
 flask-cors==6.0.1
@@ -31,6 +33,10 @@ Flask-SocketIO==5.5.1
 fonttools==4.59.0
 fpdf==1.7.2
 fpdf2==2.8.3
+google-auth==2.41.1
+google-auth-oauthlib==1.2.3
+greenlet==3.2.4
+gunicorn==23.0.0
 h11==0.16.0
 idna==3.10
 itsdangerous==2.2.0
@@ -44,11 +50,14 @@ MarkupSafe==3.0.2
 mdurl==0.1.2
 mistune==3.1.3
 mongoengine==0.27.0
+oauthlib==3.3.1
 ordered-set==4.1.0
 packaging==25.0
 passlib==1.7.4
 pillow==11.3.0
 prompt_toolkit==3.0.52
+pyasn1==0.6.1
+pyasn1_modules==0.4.2
 pycparser==2.22
 Pygments==2.19.2
 PyJWT==2.10.1
@@ -60,12 +69,14 @@ python-slugify==8.0.4
 python-socketio==5.13.0
 PyYAML==6.0.2
 qrcode==8.2
-redis==5.0.0
+redis==5.0.1
 referencing==0.36.2
 reportlab==4.4.4
 requests==2.32.5
+requests-oauthlib==2.0.0
 rich==13.9.4
 rpds-py==0.27.0
+rsa==4.9.1
 sib-api-v3-sdk==7.6.0
 simple-websocket==1.1.0
 six==1.17.0
@@ -79,9 +90,3 @@ wcwidth==0.2.14
 Werkzeug==3.1.3
 wrapt==1.17.2
 wsproto==1.2.0
-gunicorn==23.0.0
-eventlet==0.40.4
-google-auth
-google-auth-oauthlib
-google-auth-httplib2
-google-api-python-client
