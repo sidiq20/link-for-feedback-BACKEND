@@ -57,7 +57,11 @@ def create_app():
     app.config['MAIL_USERNAME'] = os.getenv('SEND_EMAIL')
     app.config['MAIL_PASSWORD'] = os.getenv('SMTP_PASS')
     app.config['MAIL_DEFAULT_SENDER'] = os.getenv('SEND_EMAIL')
-    mail.init_app(app)
+    
+    try:
+        mail.init_app(app)
+    except Exception as e:
+        print(f"Error initializing mail: {e}")
 
     REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
     

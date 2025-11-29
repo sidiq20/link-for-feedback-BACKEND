@@ -463,4 +463,40 @@ def list_examiners_and_invite(exam_id):
             return jsonify({'error': 'Exam not found'})
         
         actor = g.current_user
-        actor_id = actor.get
+        actor_id = actor.get('_id')
+        is_owner = str(actor_id) == str(exam.get('owner_id'))
+        is_coowner = False
+        for ex in exam.get('examiners', []):
+            if isinstance(ex, dict) and str(ex.get("_id")) == str(actor_id) and ex.get('role') == 'co-owner':
+                is_coowner =True
+                break 
+            
+            examiners = []
+            for ex in exam.get('examiners', []):
+                examiners.append({
+                    'id': str(ex['_id']) if isinstance(ex['_id'], ObjectId) else str(ex['_id']),
+                    'role': ex.get('role'),
+                    'permissions': ex.get('permissions', {}),
+                    'added_at': ex.get('added_at')
+                })
+                
+            response = {'examiners': examiners}
+            
+            if is_owner or is_coowner:
+                pending_invites = list(db.invites.find({'exam_id': ObjectId(exam_id), 'status': 'pending'}))
+                response['pending_invites'] = [
+                    {
+                        'invite_id': str(inv['_id']),
+                        'email': inv['email'],
+                        'role': inv.get('role'),
+                        'permissions': inv.get('permissions'),
+                        'created_at': inv.get('created_at'),
+                        'expires_at': inv.get('expires_at')
+                    }
+                    for inv in pending_invites
+                ]
+            return jsonify(response), 200
+
+    except Exception as e:
+        current_app.logger.exception("list_examiners_and_invite error")
+        return jsonify({'error': str(e)}), 500
