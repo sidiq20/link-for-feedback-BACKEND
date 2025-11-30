@@ -527,6 +527,7 @@ def google_callback():
 
     token_url = "https://oauth2.googleapis.com/token"
     redirect_uri = f"{current_app.config['BACKEND_URL']}/api/auth/google/callback"
+    print("REDIRECT URI USED:", redirect_uri)
 
     data = {
         "code": code,
