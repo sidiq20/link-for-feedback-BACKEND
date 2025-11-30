@@ -2,8 +2,7 @@ import os
 from dotenv import load_dotenv
 from backend import create_app
 from backend.config import ensure_ttl_indexes
-from backend.routes.exam.exam_socket import socketio
-from backend.extensions import init_redis
+from backend.extensions import init_redis, socketio
 
 load_dotenv()
 app = create_app()

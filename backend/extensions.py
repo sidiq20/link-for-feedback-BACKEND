@@ -6,6 +6,7 @@ import os
 from flask_pymongo import PyMongo
 from urllib.parse import urlparse
 import redis
+from flask_socketio import SocketIO
 
 load_dotenv()
 mail = Mail()
@@ -18,6 +19,8 @@ limiter = Limiter(
 )
 
 mongo = PyMongo()
+
+socketio = SocketIO(cors_allowed_origins="*", async_mode="threading")
 
 def api_rate_limit(limit="10/minute"):
     def decorator(f):

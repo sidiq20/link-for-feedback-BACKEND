@@ -1,11 +1,11 @@
-from flask_socketio import SocketIO, disconnect, emit, join_room, leave_room
+from flask_socketio import  disconnect, emit, join_room, leave_room
 from flask import current_app, request
 import jwt 
 from bson import ObjectId
 from datetime import datetime
 from threading import Lock
+from backend.extensions import socketio
 
-socketio = SocketIO(cors_allowed_origins="*")
 background_tasks = {}
 _bg_lock = Lock()
 
@@ -115,7 +115,7 @@ def ws_connect():
 
     # start the timer background task for this session (if not running)
     try:
-        _start_session_timer(session_id)
+        start_session_timer(session_id)
     except Exception:
         current_app.logger.exception("Failed to start session timer on connect")
 

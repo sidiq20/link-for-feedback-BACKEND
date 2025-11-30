@@ -4,14 +4,13 @@ from flask_cors import CORS
 from datetime import timedelta
 import logging
 from .config import Config, test_mongo_connection, ensure_ttl_indexes, ensure_unique_indexes, delete_expired_refresh_tokens
-from backend.extensions import init_redis, limiter, mail
+from backend.extensions import init_redis, limiter, mail, socketio
 from dotenv import load_dotenv
 import os
 from flask_pymongo import PyMongo
 import secrets
 import uuid
 from redis import Redis
-from flask_socketio import SocketIO
 from flasgger import Swagger 
 from backend.routes.exam.exam_socket import socketio
 
@@ -19,7 +18,6 @@ from backend.routes.exam.exam_socket import socketio
 load_dotenv()
 mongo = PyMongo()
 
-socketio = SocketIO(cors_allowed_origins="*", async_mode='threading')
 
 REDIS_URL = os.getenv("REDIS_URL")
 

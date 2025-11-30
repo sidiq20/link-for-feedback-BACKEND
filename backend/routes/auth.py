@@ -14,6 +14,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as grequests
 from backend.utils.validation import validate_email, validate_password, generate_token, verify_token
 from backend.utils.mailer import send_email
+from google.auth.transport import Request
 
 auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
@@ -519,6 +520,7 @@ def google_auth_url():
 
 @auth_bp.route("/google/callback", methods=["GET"])
 def google_callback():
+    print("CALLBACK HIT!")
     code = request.args.get("code")
     if not code:
         return jsonify({"error": "Missing Google code"}), 400
@@ -536,13 +538,17 @@ def google_callback():
 
     # Use requests to exchange code for tokens
     token_res = requests.post(token_url, data=data, timeout=10).json()
+    logger.error("google token response:", token_res)
+    print("google token response:", token_res)
     if "id_token" not in token_res:
         logger.exception(f"Google token exchange failed: {token_res}")
         return jsonify({"error": "Google token exchange failed"}), 400
 
     # Verify Google ID token
     idinfo = id_token.verify_oauth2_token(
-        token_res["id_token"], grequests.Request(), current_app.config["GOOGLE_CLIENT_ID"]
+        token_res["id_token"],
+        Request(),
+        current_app.config["GOOGLE_CLIENT_ID"]
     )
 
     email = idinfo.get("email")
