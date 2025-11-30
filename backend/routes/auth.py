@@ -13,7 +13,7 @@ from backend.extensions import redis_client, mongo, limiter
 from google.oauth2 import id_token
 from backend.utils.validation import validate_email, validate_password, generate_token, verify_token
 from backend.utils.mailer import send_email
-from google.auth.transport import Request
+from google.auth.transport.requests import Request
 
 auth_bp = Blueprint("auth", __name__)
 logger = logging.getLogger(__name__)
