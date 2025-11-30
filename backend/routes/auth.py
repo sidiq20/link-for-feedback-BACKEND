@@ -547,6 +547,7 @@ def google_callback():
     print("STEP 1: Starting verify...")
     print("AUDIENCE EXPECTED:", current_app.config["GOOGLE_CLIENT_ID"])
     print("GOT ID_TOKEN:", token_res["id_token"][:50], "...")
+    print("GOT ACCESS_TOKEN:", token_res["access_token"][:50], "...")
     
     # Verify Google ID token
     idinfo = id_token.verify_oauth2_token(
