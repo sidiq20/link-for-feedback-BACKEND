@@ -11,7 +11,6 @@ import uuid
 import requests
 from backend.extensions import redis_client, mongo, limiter
 from google.oauth2 import id_token
-from google.auth.transport import requests as grequests
 from backend.utils.validation import validate_email, validate_password, generate_token, verify_token
 from backend.utils.mailer import send_email
 from google.auth.transport import Request
