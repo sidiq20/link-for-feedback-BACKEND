@@ -543,13 +543,19 @@ def google_callback():
     if "id_token" not in token_res:
         logger.exception(f"Google token exchange failed: {token_res}")
         return jsonify({"error": "Google token exchange failed"}), 400
-
+    
+    print("STEP 1: Starting verify...")
+    print("AUDIENCE EXPECTED:", current_app.config["GOOGLE_CLIENT_ID"])
+    print("GOT ID_TOKEN:", token_res["id_token"][:50], "...")
+    
     # Verify Google ID token
     idinfo = id_token.verify_oauth2_token(
         token_res["id_token"],
         Request(),
         current_app.config["GOOGLE_CLIENT_ID"]
     )
+    print("STEP 2: Verify passed!")
+    print("IDINFO:", idinfo)
 
     email = idinfo.get("email")
     name = idinfo.get("name")
