@@ -1,4 +1,4 @@
-from flask import Blueprint, request, jsonify, current_app, url_for, g, make_response
+from flask import Blueprint, request, jsonify, current_app, url_for, g, make_response, redirect
 from werkzeug.security import generate_password_hash, check_password_hash
 from bson import ObjectId
 from bson.errors import InvalidId
@@ -558,15 +558,21 @@ def google_callback():
     print("STEP 2: Verify passed!")
     print("IDINFO:", idinfo)
 
+    print("STEP 3: Extracting user data...")
     email = idinfo.get("email")
+    print("USER EMAIL:", email)
+    
     name = idinfo.get("name")
     google_id = idinfo.get("sub")
     email_verified = idinfo.get("email_verified", False)
 
     db = get_db()
 
+    print("STEP 4: Checking if user exists in DB...")
     user = db.users.find_one({"email": email})
-
+    print("USER FOUND:", user)
+    
+    print("STEP 5: Generating tokens...")
     if not user:
         # Create Google user
         user_doc = {
@@ -584,15 +590,30 @@ def google_callback():
         user = db.users.find_one({"_id": result.inserted_id})
 
     # Generate our JWT + refresh token
-    access_token = create_jwt({"user_id": str(user["_id"]), "email": user["email"]}, expires_in_seconds=900)
+    access_token = create_jwt(
+        {"user_id": str(user["_id"]), "email": user["email"]},
+        expires_in_seconds=900
+    )
     refresh_token = str(uuid.uuid4())
 
     store_refresh_token_in_db(refresh_token, user["_id"])
 
-    frontend_redirect = f"{current_app.config['FRONTEND_URL']}/auth/callback?access={access_token}&refresh={refresh_token}"
+    frontend_redirect = (
+        f"{current_app.config['FRONTEND_URL']}/auth/callback?access={access_token}&refresh={refresh_token}"
+    )
 
-    return jsonify({"redirect": frontend_redirect})
-
+    resp = make_response(redirect(frontend_redirect))
+    resp.set_cookie(
+        "refresh_token",
+        refresh_token,
+        httponly=True,
+        secure=True, 
+        samesite="None",
+        max_age=7 * 24 * 3600
+    )
+    
+    print("STEP 6: Redirecting to frontend...")
+    return resp
 
 @auth_bp.route("/send-verification", methods=["POST"])
 @limiter.limit('3 per minute')
