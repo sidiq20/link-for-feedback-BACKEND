@@ -1,9 +1,26 @@
 from datetime import datetime
 from bson import ObjectId
+from typing import Any
 import hashlib
 import json
+from cryptography.fernet import InvalidToken
 from backend.utils.security import hash_answer, encrypt_answer
+from backend.utils.security import get_fernet
 
+def encrypt_value(value: any) -> str:
+    f = get_fernet()
+    payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
+    token = f.encrypt(payload)
+    return token.decode("utf-8")
+
+
+def decrypt_value(value: str) -> any:
+    f = get_fernet()
+    try:
+        payload = f.decrypt(value.encode("utf-8"))
+        return json.loads(payload.decode("utf-8"))
+    except InvalidToken:
+        raise ValueError("Invalid encrypted token")
 
 def normalize_answer(value):
     """

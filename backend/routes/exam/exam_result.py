@@ -66,3 +66,84 @@ def student_results(student_id):
     except Exception as e:
         current_app.logger.exception('Get student results error')
         return jsonify({'error': 'Failed to fecth student results'}), 500
+
+
+@exam_result_bp.route("/session/<session_id>", methods=['GET'])
+@token_required
+def session_result_breakdown(session_id):
+    """
+    Breakdown per attempt (session).
+    """
+    try:
+        db = current_app.mongo.db
+        session = db.exam_sessions.find_one({'_id': ObjectId(session_id)})
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+            
+        # Permission check: student (own) or owner/examiner
+        is_own = str(session['user_id']) == str(g.current_user['_id'])
+        if not is_own:
+             exam = db.exams.find_one({'_id': session['exam_id']})
+             if str(exam['owner_id']) != str(g.current_user['_id']):
+                 return jsonify({'error': 'Forbidden'}), 403
+
+        result = db.exam_results.find_one({'session_id': ObjectId(session_id)})
+        if not result:
+            return jsonify({'error': 'Result not found'}), 404
+            
+        # If student, maybe hide detailed breakdown if not allowed?
+        # For now return what we have.
+        result['_id'] = str(result['_id'])
+        result['session_id'] = str(result['session_id'])
+        
+        return jsonify(result), 200
+    except Exception as e:
+        current_app.logger.exception("session_result_breakdown error")
+        return jsonify({'error': str(e)}), 500
+
+
+@exam_result_bp.route("/<exam_id>/rankings", methods=['GET'])
+@token_required
+def exam_rankings(exam_id):
+    """
+    Leaderboard.
+    """
+    try:
+        db = current_app.mongo.db
+        # Check if rankings enabled?
+        
+        pipeline = [
+            {'$match': {'exam_id': ObjectId(exam_id), 'status': 'submitted'}},
+            {'$sort': {'final_score': -1, 'submitted_at': 1}},
+            {'$limit': 50},
+            {'$lookup': {
+                'from': 'users',
+                'localField': 'user_id',
+                'foreignField': '_id',
+                'as': 'user'
+            }},
+            {'$unwind': '$user'},
+            {'$project': {
+                'name': '$user.name',
+                'score': '$final_score',
+                'submitted_at': '$submitted_at'
+            }}
+        ]
+        rankings = list(db.exam_results.aggregate(pipeline))
+        return jsonify({'rankings': rankings}), 200
+    except Exception as e:
+        current_app.logger.exception("exam_rankings error")
+        return jsonify({'error': str(e)}), 500
+
+
+@exam_result_bp.route("/<exam_id>/certificate/<student_id>", methods=['GET'])
+@token_required
+def get_certificate(exam_id, student_id):
+    """
+    PDF certificate download (mock).
+    """
+    try:
+        # Check if passed?
+        return jsonify({'message': 'Certificate generation not implemented yet', 'url': '#'}), 501
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500

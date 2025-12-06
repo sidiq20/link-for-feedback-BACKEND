@@ -41,7 +41,6 @@ def submit_response(slug):
         responder_ip = request.remote_addr
         response_id = FORM_RESPONSE.submit(str(form["_id"]), structured_answers, responder_ip)
         
-        # Emit real-time updates
         try:
             results = FORM_RESPONSE.get_poll_results(str(form["_id"]))
             socketio.emit("form_update", {"form_id": str(form["_id"]), "results": results}, room=str(form["_id"]))

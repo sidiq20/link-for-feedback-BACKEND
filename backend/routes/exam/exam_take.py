@@ -198,63 +198,268 @@ def save_answer():
     
 @exam_take_bp.route('/submit', methods=['POST'])
 @token_required
-@limiter.limit('3 per minute')
+@limiter.limit('10 per minute')
 def submit_session():
-    '''
-    Body: { session_id }
-    Final submission. Marks session submitted and triggers grading for auto-gradable items.
-    '''
     try:
         data = request.get_json() or {}
         session_id = data.get("session_id")
         if not session_id:
             return jsonify({'error': 'session_id required'}), 400
-        
+
         db = current_app.mongo.db
-        session = db.exam_sessions.find_one({"_id": ObjectId(session_id), 'user_id': ObjectId(g.current_user['_id'])})
+        session = db.exam_sessions.find_one({
+            "_id": ObjectId(session_id),
+            "user_id": ObjectId(g.current_user["_id"])
+        })
         if not session:
             return jsonify({'error': 'Session not found or not yours'}), 404
-        
-        # mark session as submitted
-        db.exam_sessions.update_one({'_id': session['_id']}, {'$set': {'status': 'submitted', 'ended_at': datetime.utcnow(), 'updated_at': datetime.utcnow()}})
-        
-        # mark result status
-        db.exam_results.update_one({'session_id': session['_id']}, {'$set': {'status': 'submitted', 'ended_at': datetime.utcnow(), 'updated_at': datetime.utcnow()}})
-        
-        # queue grading job - for now we do simple inline autograde for MCQ
-        # fetch answers and grade MCQ
-        exam_id = session['exam_id']
-        questions = list(db.exam_questions.find({'exam_id': exam_id}))
-        answers_docs = list(db.exam_answers.find({'session_id': session['_id']}))
-        
-        # map latest answer per question_id
+
+        db.exam_sessions.update_one(
+            {"_id": session["_id"]},
+            {"$set": {
+                "status": "submitted",
+                "ended_at": datetime.utcnow(),
+                "updated_at": datetime.utcnow()
+            }}
+        )
+
+        db.exam_results.update_one(
+            {"session_id": session["_id"]},
+            {"$set": {
+                "status": "submitted",
+                "submitted_at": datetime.utcnow()
+            }}
+        )
+
+        exam_id = session["exam_id"]
+        questions = list(db.exam_questions.find({"exam_id": exam_id}))
+        answers_docs = list(db.exam_answers.find({"session_id": session["_id"]}))
+
+        # map answers
         latest = {}
         for a in answers_docs:
-            qid = str(a['question_id'])
-            if qid not in latest or a['saved_at'] > latest[qid]['saved_at']:
-                latest[qid] = a 
-                
+            qid = str(a["question_id"])
+            if qid not in latest or a["saved_at"] > latest[qid]["saved_at"]:
+                latest[qid] = a
+
         total_score = 0
-        possible = 0
+        possible_score = 0
+        detailed_results = []
+
+        from backend.models.question import decrypt_value, normalize_answer
+
         for q in questions:
-            qid = str(q['_id'])
-            possible += q.get('points', 1)
-            if q['type'] == 'mcq' and qid in latest:
-                given = latest[qid]['answer']
-                stored_hash = q.get('answer_key')
-                if given is not None and stored_hash is not None:
-                    # Hash the user's answer and compare with stored hash
-                    given_hash = hash_answer(given)
-                    if given_hash == stored_hash:
-                        total_score += q.get('points', 1)
-                # text answers marked for manual review (skip)
-                    
-        
-        # Update result doc
-        db.exam_results.update_one({'session_id': session['_id']}, {'$set': {'final_score': total_score, 'graded': True, 'status': 'graded', 'updated_at': datetime.utcnow()}})
-        
-        return jsonify({'message': 'Submitted', 'final_score': total_score, 'possible': possible})
-    
+            qid = str(q["_id"])
+            qtype = q["type"]
+            points = q.get("points", 1)
+            possible_score += points
+
+            encrypted_key = q.get("answer_key")
+            correct_answer = decrypt_value(encrypted_key) if encrypted_key else None
+            user_answer = latest.get(qid, {}).get("answer")
+
+            auto_score = 0
+            needs_manual = False
+
+            if qtype == "mcq" and correct_answer is not None:
+                corr = normalize_answer(correct_answer)
+                given = normalize_answer(user_answer)
+
+                if isinstance(corr, list):
+                    corr = sorted(corr)
+                if isinstance(given, list):
+                    given = sorted(given)
+
+                if corr == given:
+                    auto_score = points
+                elif q.get("allow_partial") and isinstance(corr, list) and isinstance(given, list):
+                    correct_hits = len(set(corr) & set(given))
+                    auto_score = (correct_hits / len(corr)) * points
+
+            elif qtype == "boolean":
+                if str(user_answer).lower() == str(correct_answer).lower():
+                    auto_score = points
+
+            elif qtype in ("text", "fill_blank"):
+                # crude auto grading; can be replaced with fuzzy matching or embeddings later
+                if normalize_answer(user_answer) == normalize_answer(correct_answer):
+                    auto_score = points
+                else:
+                    needs_manual = True
+
+            elif qtype in ("code", "essay", "file_upload"):
+                needs_manual = True
+
+            # Save question_result entry
+            detailed_results.append({
+                "question_id": qid,
+                "type": qtype,
+                "user_answer": user_answer,
+                "correct_answer": None,     # Hide from student
+                "awarded": auto_score,
+                "possible": points,
+                "needs_manual": needs_manual
+            })
+
+            total_score += auto_score
+
+        # Update main result record
+        db.exam_results.update_one(
+            {"session_id": session["_id"]},
+            {"$set": {
+                "auto_score": total_score,
+                "possible_score": possible_score,
+                "detailed": detailed_results,
+                "graded": not any(r["needs_manual"] for r in detailed_results),
+                "updated_at": datetime.utcnow()
+            }}
+        )
+
+        return jsonify({
+            "message": "Submitted successfully",
+            "auto_score": total_score,
+            "possible_score": possible_score,
+            "needs_manual_review": any(r["needs_manual"] for r in detailed_results)
+        }), 200
+
     except Exception as e:
-        current_app.logger.exception('Submit session error')
-        return jsonify({'error': 'submission failed', 'details': str(e)}), 500
+        current_app.logger.exception("Submit grading error")
+        return jsonify({'error': 'Failed to submit and grade', 'details': str(e)}), 500
+  
+@exam_take_bp.route('/<exam_id>/question', methods=["GET"])
+@token_required
+def get_questions(exam_id):
+    try:
+        db = current_app.mongo.db
+        
+        exam = db.exams.find_one({'_id': ObjectId(exam_id), "status": "published"})
+        if not exam:
+            return jsonify({'error': 'Exam not found'}), 404
+        
+        session = db.exam_sessions.find_one({
+            'exam_id': ObjectId(exam_id),
+            'user_id': ObjectId(g.current_user['_id']),
+            'status': {'$in': ['in_progress', 'submitted']}
+        })
+        
+        if not session:
+            return jsonify({'error': 'No active session found'}), 403
+        
+        questions = list(db.exam_questions.find({'exam_id': ObjectId(exam_id)}))
+        
+        delivered = []
+        # from backend.models.question import decrypt_value
+        
+        for q in questions:
+            # Prompt and options are stored as plain text
+            decrypted_text = q.get("prompt", "")
+            decrypted_options = q.get("options")
+            
+            delivered.append({
+                "question_id": str(q["_id"]),
+                "type": q["type"],
+                "points": q.get("points", 1),
+                "text": decrypted_text,
+                "options": decrypted_options,
+                "media": q.get("media"),
+                "shuffle": q.get("shuffle_options", False),
+                "allow_partial": q.get("allow_partial", False),
+            })
+            
+        return jsonify({
+            "session_id": str(session["_id"]),
+            "questions": delivered
+        }), 200
+
+    except Exception as e:
+        current_app.logger.exception("Failed to fetch questions")
+        return jsonify({"error": "Failed to fetch questions", "details": str(e)}), 500
+
+
+@exam_take_bp.route('/session/<session_id>', methods=['GET'])
+@token_required
+def get_session_state(session_id):
+    """
+    Get current session state.
+    """
+    try:
+        db = current_app.mongo.db
+        session = db.exam_sessions.find_one({
+            '_id': ObjectId(session_id),
+            'user_id': ObjectId(g.current_user['_id'])
+        })
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+            
+        session['_id'] = str(session['_id'])
+        session['exam_id'] = str(session['exam_id'])
+        session['user_id'] = str(session['user_id'])
+        session['student_id'] = str(session['student_id']) if session.get('student_id') else None
+        
+        return jsonify(session), 200
+    except Exception as e:
+        current_app.logger.exception("get_session_state error")
+        return jsonify({'error': str(e)}), 500
+
+
+@exam_take_bp.route('/session/<session_id>/pause', methods=['POST'])
+@token_required
+def pause_session(session_id):
+    """
+    Pause session if allowed.
+    """
+    try:
+        db = current_app.mongo.db
+        session = db.exam_sessions.find_one({
+            '_id': ObjectId(session_id),
+            'user_id': ObjectId(g.current_user['_id'])
+        })
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+            
+        # Check if exam allows pausing? For now assume yes or check settings
+        exam = db.exams.find_one({"_id": session["exam_id"]})
+        if not exam or not exam.get("settings", {}).get("allow_pause", True):
+             return jsonify({'error': 'Pausing not allowed'}), 403
+             
+        if session['status'] != 'in_progress':
+            return jsonify({'error': 'Session not in progress'}), 400
+            
+        db.exam_sessions.update_one(
+            {'_id': ObjectId(session_id)},
+            {'$set': {'status': 'paused', 'updated_at': datetime.utcnow()}}
+        )
+        
+        return jsonify({'message': 'Session paused'}), 200
+    except Exception as e:
+        current_app.logger.exception("pause_session error")
+        return jsonify({'error': str(e)}), 500
+
+
+@exam_take_bp.route('/session/<session_id>/resume', methods=['POST'])
+@token_required
+def resume_session(session_id):
+    """
+    Resume session.
+    """
+    try:
+        db = current_app.mongo.db
+        session = db.exam_sessions.find_one({
+            '_id': ObjectId(session_id),
+            'user_id': ObjectId(g.current_user['_id'])
+        })
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+            
+        if session['status'] != 'paused':
+            return jsonify({'error': 'Session not paused'}), 400
+            
+        db.exam_sessions.update_one(
+            {'_id': ObjectId(session_id)},
+            {'$set': {'status': 'in_progress', 'updated_at': datetime.utcnow()}}
+        )
+        
+        return jsonify({'message': 'Session resumed'}), 200
+    except Exception as e:
+        current_app.logger.exception("resume_session error")
+        return jsonify({'error': str(e)}), 500

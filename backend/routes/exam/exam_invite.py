@@ -46,7 +46,7 @@ def search_user_by_email():
 # --- INVITE EXAMINERS ---
 @exam_invite_bp.route('/<exam_id>', methods=['POST'])
 @token_required
-@limiter.limit('3 per minute')
+@limiter.limit('5 per minute')
 def invite_examiner(exam_id):
     """
     Body: { "examiner_emails": ["john@example.com", "jane@example.com"] }
@@ -375,7 +375,7 @@ def remove_examiner(exam_id):
         )
         
         db.invites.update_many(
-            {'exam_id': ObjectId(exam_id), '$or': [{'user_id': ObjectId(target_id)}, {'email': {'$in'}}]},
+            {'exam_id': ObjectId(exam_id), 'user_id': ObjectId(target_id)},
             {"$set": {'status': 'revoked', 'revoked_at': now_utc(), 'revoked_by': ObjectId(actor_id)}}
         )
         
@@ -438,7 +438,7 @@ def update_examiner_permissions(exam_id):
         # update the examiner entry in exam.examiners (array of dicts)
         db.exams.update_one(
             {'_id': ObjectId(exam_id), 'examiners._id': ObjectId(examiner_id)},
-            {'$set': {'examiners.$.permissions': new_perms, **({'examiners.$.new_role'} if new_role else {})}}
+            {'$set': {'examiners.$.permissions': new_perms, **({'examiners.$.role': new_role} if new_role else {})}}
         )
         
         log_exam_action(exam_id, 'examiner_permissions_updated', actor_id, {'examiner_id': examiner_id, 'permissions': new_perms, 'role': new_role})
@@ -447,56 +447,179 @@ def update_examiner_permissions(exam_id):
     
     except Exception as e:
         current_app.logger.exception("update_examiner_permissions error")
-        return jsonify({'error': str(e)}), 500
-    
-
-@exam_invite_bp.route('<exam_id>/list', methods=['GET'])
-@token_required
-def list_examiners_and_invite(exam_id):
-    """returns examiner + pending invites (pedning invites only visible to owner and co-owner)
-    Examiners see other examiners and their permissions
+    """
+    List all active/pending invite links for an exam.
     """
     try:
         db = current_app.mongo.db
         exam = db.exams.find_one({'_id': ObjectId(exam_id)})
         if not exam:
-            return jsonify({'error': 'Exam not found'})
+            return jsonify({'error': 'Exam not found'}), 404
         
-        actor = g.current_user
-        actor_id = actor.get('_id')
+        # Check permissions
+        actor_id = g.current_user['_id']
         is_owner = str(actor_id) == str(exam.get('owner_id'))
         is_coowner = False
         for ex in exam.get('examiners', []):
             if isinstance(ex, dict) and str(ex.get("_id")) == str(actor_id) and ex.get('role') == 'co-owner':
-                is_coowner =True
-                break 
-            
-            examiners = []
-            for ex in exam.get('examiners', []):
-                examiners.append({
-                    'id': str(ex['_id']) if isinstance(ex['_id'], ObjectId) else str(ex['_id']),
-                    'role': ex.get('role'),
-                    'permissions': ex.get('permissions', {}),
-                    'added_at': ex.get('added_at')
-                })
-                
-            response = {'examiners': examiners}
-            
-            if is_owner or is_coowner:
-                pending_invites = list(db.invites.find({'exam_id': ObjectId(exam_id), 'status': 'pending'}))
-                response['pending_invites'] = [
-                    {
-                        'invite_id': str(inv['_id']),
-                        'email': inv['email'],
-                        'role': inv.get('role'),
-                        'permissions': inv.get('permissions'),
-                        'created_at': inv.get('created_at'),
-                        'expires_at': inv.get('expires_at')
-                    }
-                    for inv in pending_invites
-                ]
-            return jsonify(response), 200
+                is_coowner = True
+                break
+        
+        if not (is_owner or is_coowner):
+            return jsonify({'error': 'Forbidden'}), 403
 
+        pending_invites = list(db.invites.find({'exam_id': ObjectId(exam_id), 'status': 'pending'}))
+        results = [
+            {
+                'invite_id': str(inv['_id']),
+                'email': inv['email'],
+                'role': inv.get('role'),
+                'token': inv.get('token'),
+                'created_at': inv.get('created_at'),
+                'expires_at': inv.get('expires_at'),
+                'link': url_for("exam_invite.accept_invite", token=inv['token'], _external=True)
+            }
+            for inv in pending_invites
+        ]
+        
+        return jsonify({'invites': results}), 200
+    except Exception as e:
+        current_app.logger.exception("list_invites error")
+        return jsonify({'error': str(e)}), 500
+
+
+@exam_invite_bp.route('/<exam_id>/list', methods=['GET'])
+@token_required
+def list_examiners_and_invite(exam_id):
+    """Returns examiners + pending invites"""
+    try:
+        db = current_app.mongo.db
+        exam = db.exams.find_one({'_id': ObjectId(exam_id)})
+        if not exam:
+            return jsonify({'error': 'Exam not found'}), 404
+        
+        actor_id = g.current_user.get('_id')
+        is_owner = str(actor_id) == str(exam.get('owner_id'))
+        
+        # Build examiners list from ObjectIds
+        examiners = []
+        for ex_id in exam.get('examiners', []):
+            if isinstance(ex_id, ObjectId):
+                user = db.users.find_one({'_id': ex_id})
+                if user:
+                    examiners.append({
+                        'id': str(ex_id),
+                        'email': user.get('email'),
+                        'name': user.get('name', ''),
+                        'role': 'examiner'
+                    })
+        
+        response = {'examiners': examiners}
+        
+        # Only owners see pending invites
+        if is_owner:
+            pending_invites = list(db.invites.find({'exam_id': ObjectId(exam_id), 'status': 'pending'}))
+            response['pending_invites'] = [{
+                'invite_id': str(inv['_id']),
+                'email': inv['email'],
+                'role': inv.get('role'),
+                'created_at': inv.get('created_at'),
+                'expires_at': inv.get('expires_at')
+            } for inv in pending_invites]
+        
+        return jsonify(response), 200
     except Exception as e:
         current_app.logger.exception("list_examiners_and_invite error")
+        return jsonify({'error': str(e)}), 500
+
+        
+@exam_invite_bp.route('/<exam_id>/invite/regenerate', methods=['POST'])
+@token_required
+@limiter.limit('5 per minute')
+def regenerate_invite(exam_id):
+    """
+    Regenerate an invite for a specific email or invite_id.
+    Body: { "invite_id": "..." } OR { "email": "..." }
+    Invalidates old pending invites and creates a new one.
+    """
+    try:
+        db = current_app.mongo.db
+        data = request.get_json() or {}
+        invite_id = data.get("invite_id")
+        email = data.get("email")
+        
+        if not invite_id and not email:
+            return jsonify({"error": "invite_id or email required"}), 400
+            
+        exam = db.exams.find_one({'_id': ObjectId(exam_id)})
+        if not exam:
+            return jsonify({'error': 'Exam not found'}), 404
+            
+        # Permission check
+        actor_id = g.current_user['_id']
+        is_owner = str(actor_id) == str(exam.get('owner_id'))
+        is_coowner = False
+        for ex in exam.get('examiners', []):
+            if isinstance(ex, dict) and str(ex.get("_id")) == str(actor_id) and ex.get('role') == 'co-owner':
+                is_coowner = True
+                break
+        
+        if not (is_owner or is_coowner):
+            return jsonify({'error': 'Forbidden'}), 403
+
+        # Resolve email if invite_id provided
+        old_invite = None
+        if invite_id:
+            old_invite = db.invites.find_one({"_id": ObjectId(invite_id)})
+            if not old_invite:
+                return jsonify({"error": "Invite not found"}), 404
+            email = old_invite["email"]
+            role = old_invite.get("role", "viewer")
+            permissions = old_invite.get("permissions", {})
+        else:
+            role = "viewer"
+            permissions = {}
+            last_invite = db.invites.find_one({"exam_id": ObjectId(exam_id), "email": email}, sort=[("created_at", -1)])
+            if last_invite:
+                role = last_invite.get("role", "viewer")
+                permissions = last_invite.get("permissions", {})
+
+        # Revoke all pending for this email
+        db.invites.update_many(
+            {"exam_id": ObjectId(exam_id), "email": email, "status": "pending"},
+            {"$set": {"status": "revoked", "revoked_at": datetime.utcnow(), "revoked_by": ObjectId(actor_id)}}
+        )
+
+        # Create new
+        token = make_token()
+        created_at = datetime.utcnow()
+        expires_at = created_at + timedelta(minutes=1440)
+        
+        user = db.users.find_one({"email": email})
+        user_id = user["_id"] if user else None
+
+        new_invite = {
+            "exam_id": ObjectId(exam_id),
+            "user_id": user_id,
+            "email": email,
+            "token": token,
+            "role": role,
+            "permissions": permissions,
+            "status": "pending",
+            "created_at": created_at,
+            "expires_at": expires_at,
+            "created_by": ObjectId(actor_id)
+        }
+        
+        res = db.invites.insert_one(new_invite)
+        accept_url = url_for("exam_invite.accept_invite", token=token, _external=True)
+        
+        return jsonify({
+            "message": "Invite regenerated",
+            "invite_id": str(res.inserted_id),
+            "link": accept_url
+        }), 201
+
+    except Exception as e:
+        current_app.logger.exception("regenerate_invite error")
         return jsonify({'error': str(e)}), 500

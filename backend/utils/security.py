@@ -10,19 +10,25 @@ import logging
 import json 
 import os 
 import base64
+import re 
 
 logger = logging.getLogger(__name__)
 
 FERNET_KEY = os.environ.get("FERNET_KEY")
+
 if not FERNET_KEY:
-    FERNET_KEY = Fernet.generate_key().decode()
-    logger.warning(
-        "FERNET_KEY not found in environment. Generated ephemeral key — "
-        "this is fine for dev but *must* be set in production!"
+    raise RuntimeError(
+        "FERNET_KEY is missing! set it in the environment before starting the app"
     )
     
+try:
+    _fernet = Fernet(FERNET_KEY.encode())
+except Exception as e:
+    raise RuntimeError("FERNET_KEY is invalid. Must be a valid Fernet key.") from e
+
+
 def get_fernet() -> Fernet:
-    return Fernet(FERNET_KEY.encode())
+    return _fernet
 
 def normalize_answer(value: Any) -> Any:
     """
@@ -50,100 +56,68 @@ def normalize_answer(value: Any) -> Any:
 def serialize_normalized(value: Any) -> str:
     return json.dumps(value, sort_keys=True, ensure_ascii=False)
 
+# true hash
+
+def hash_answer(value: Any) -> str:
+    normalized = normalize_answer(value)
+    serilaized = serialize_normalized(normalized)
+    return hashlib.sha256(serilaized.encode('utf-8')).hexdigest()
+
+# encrypt password
+def encrypt_answer(value: Any) -> str:
+    f = get_fernet()
+    payload = json.dumps(value, ensure_ascii=False).encode('utf-8')
+    token = f.encrypt(payload)
+    return token.decode('utf-8')
+
+def decrypt_answer(token: str) -> Any:
+    f = get_fernet()
+    try:
+        payload = f.decrypt(token.encode('utf-8'))
+        return json.loads(payload.decode('utf-8'))
+    except InvalidToken:
+        raise ValueError('Invalid encrypted answer token')
+    
+def verify_answer(user_answer: Any, stored_hash: Union[str, List[str]]) -> bool:
+    user_h = hash_answer(user_answer)
+    
+    if isinstance(stored_hash, list):
+        return any(hmac.compare_digest(h, user_h) for h in stored_hash)
+    
+    return hmac.compare_digest(stored_hash, user_h)
+
+# csrf / misc util
 def generate_csrf_token():
-    """Generate csrf token for forms """
     if "csrf_token" not in session:
         session["csrf_token"] = secrets.token_hex(32)
     return session["csrf_token"]
 
 def verify_csrf_token(token):
-    """Verofy CSRF token """
-    return token and session.get("csrf_token") == token 
+    return token and session.get("csrf_token") == token
 
 def get_client_ip():
-    """Get client IP address, handling proxies"""
-    if request.environ.get('HTTP_X_FORWARDED_FOR'):
-        return request.environ['HTTP_X_FORWARDED_FOR'].split(',')[0].strip()
+    if request.headers.getlist("HTTP_X_FORWARDED_FOR"):
+        return request.headers.getlist("HTTP_X_FORWARDED_FOR").split(',')[0].strip()
     elif request.environ.get('HTTP_X_REAL_IP'):
-        return request.environ['HTTP_X_REAL_IP']
+        return request.environ.get('HTTP_X_REAL_IP')
     else:
         return request.environ.get('REMOTE_ADDR', 'unknown')
     
 def hash_ip_address(ip_address, salt=None):
-    """Hash IP adress for privacy while maintaining uniqueness"""
     if salt is None:
-        salt = b"feedback_app_salt" 
-        
-    return hashlib.sha256(salt + ip_address.encode()).hexdigest()[:16]
+        salt = b'whisper_salt'
+    
+    return hashlib.sha256(salt + ip_address()).hexdigest()[:16]
 
-def secure_compare(a, b):
-    """Securely compare two strings to prevent timing attacks"""
-    return hmac.compare_digest(str(a), str(b)) 
+def secure_comare(a, b): 
+    return hmac.compare_digest(str(a), str(b))
 
-def hash_answer(answer: Any) -> str:
-    normalized = normalize_answer(answer)
-    serialized = serialize_normalized(normalized)
-    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
-
-def verify_answer(user_answer: Any, stored_hash: Union[str, List[str]]) -> bool:
-    import hmac
-    user_h = hash_answer(user_answer)
-    if isinstance(stored_hash, list):
-        for h in stored_hash:
-            if hmac.compare_digest(h, user_h):
-                return True 
-        return False 
-    else:
-        return hmac.compare_digest(stored_hash, user_h)
-
-def verify_hashed_answer(user_answer: Any, stored_hash: Union[str, List[str]]) -> bool:
-    """
-    Compute hash for user_answer and compare with stored_hash (string on list)
-    """
-    import hmac
-    user_h = hash_answer(user_answer)
-    if isinstance(stored_hash, list):
-        for h in stored_hash:
-            if hmac.compare_digest(h, user_h):
-                return True
-            return False 
-        else:
-            return hmac.compare_digest(stored_hash, user_h)
-        
-def hash_answer(value: Any) -> str:
-    """
-    Encrypts JSON-serilizable value return url safe base64 token
-    """
-    f = get_fernet()
-    payload = json.dumps(value, ensure_ascii=False).encode("UTF-8")
-    token = f.encrypt(payload)
-    return token.decode("utf-8")
-
-def encrypt_answer(value: Any) -> str:
-    f = get_fernet()
-    payload = json.dumps(value, ensure_ascii=False).encode("utf-8")
-    token = f.encrypt(payload)
-    return token.decode("utf-8")
-
-def decrypt_answer(token: str) -> Any:
-    """
-    Decrypts fernet token and returns origin value 
-    """
-    f = get_fernet()
-    try:
-        payload = f.decrypt(token.encode("utf-8"))
-    except InvalidToken as e:
-        raise
-    raise json.loads(payload.decode("utf-8"))
-
-import re 
-punct_re = re.compile(r"[^\w\s]")
+# fuzzy mathcing helper
+punct_re = re.compile(r'[^\w\s]')
 
 def normalized_text_for_fuzzy(s: str) -> str:
-    s2 = " ".join(s.strip().split())
-    s2 = s2.lower()
-    s2 = punct_re.sub("", s2)
-    return s2 
+    s2 = " ".join(s.strip().split().lower())
+    return punct_re.sub('', s2)
 
 def fuzzy_equal(a: str, b: str) -> bool:
     return normalized_text_for_fuzzy(a) == normalized_text_for_fuzzy(b)

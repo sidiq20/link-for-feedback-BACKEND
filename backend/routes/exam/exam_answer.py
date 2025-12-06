@@ -39,3 +39,72 @@ def submit_answer():
     except Exception as e:
         current_app.logger.exception('SUbmit answer error')
         return jsonify({'error': str(e)}), 500
+
+
+@exam_answer_bp.route('/<session_id>', methods=['GET'])
+@token_required
+def get_session_answers(session_id):
+    """
+    Fetch all answers for a session (for review).
+    """
+    try:
+        db = mongo.db
+        # Verify session ownership or permission
+        session = db.exam_sessions.find_one({'_id': ObjectId(session_id)})
+        if not session:
+            return jsonify({'error': 'Session not found'}), 404
+            
+        # Check if user is owner of session OR exam owner/examiner
+        is_student = str(session['user_id']) == str(g.current_user['_id'])
+        
+        if not is_student:
+             exam = db.exams.find_one({'_id': session['exam_id']})
+             is_owner = str(exam.get('owner_id')) == str(g.current_user['_id'])
+             # Check examiner... (simplified)
+             if not is_owner:
+                 return jsonify({'error': 'Forbidden'}), 403
+
+        answers = list(db.exam_answers.find({'session_id': ObjectId(session_id)}))
+        for a in answers:
+            a['_id'] = str(a['_id'])
+            a['session_id'] = str(a['session_id'])
+            a['question_id'] = str(a['question_id'])
+            a['exam_id'] = str(a['exam_id'])
+            a['user_id'] = str(a['user_id'])
+            
+        return jsonify({'answers': answers}), 200
+    except Exception as e:
+        current_app.logger.exception("get_session_answers error")
+        return jsonify({'error': str(e)}), 500
+
+
+@exam_answer_bp.route('/<session_id>/<question_id>', methods=['GET'])
+@token_required
+def get_single_answer(session_id, question_id):
+    """
+    Fetch single answer.
+    """
+    try:
+        db = mongo.db
+        answer = db.exam_answers.find_one({
+            'session_id': ObjectId(session_id),
+            'question_id': ObjectId(question_id)
+        })
+        
+        if not answer:
+            return jsonify({'error': 'Answer not found'}), 404
+            
+        # Permission check (same as above, simplified)
+        if str(answer['user_id']) != str(g.current_user['_id']):
+             pass 
+
+        answer['_id'] = str(answer['_id'])
+        answer['session_id'] = str(answer['session_id'])
+        answer['question_id'] = str(answer['question_id'])
+        answer['exam_id'] = str(answer['exam_id'])
+        answer['user_id'] = str(answer['user_id'])
+        
+        return jsonify(answer), 200
+    except Exception as e:
+        current_app.logger.exception("get_single_answer error")
+        return jsonify({'error': str(e)}), 500

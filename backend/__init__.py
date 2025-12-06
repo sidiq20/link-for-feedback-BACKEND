@@ -23,16 +23,7 @@ REDIS_URL = os.getenv("REDIS_URL")
 
 def create_app():
     app = Flask(__name__)
-    CORS(app,
-         resources={r"/*": {
-            "origins": [
-                'http://localhost:5173',
-                'http://127.0.0.1:5173',
-                'https://whisper-opal.vercel.app'
-            ]
-        }},
-        supports_credentials=True,
-    )
+    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
     app.config['CORS_ALLOW_HEADERS'] = ["Content-Type", "Authorization"]
     app.config['CORS_ALLOW_METHODS'] = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 
@@ -119,6 +110,11 @@ def create_app():
     from backend.routes.exam.exam_answer import exam_answer_bp
     from backend.routes.media_upload import media_upload_bp
     from backend.routes.health import health_bp
+    from backend.routes.exam.exam_question_delivery import exam_question_delivery_bp
+    from backend.routes.exam.proctoring import proctoring_bp
+    from backend.routes.exam.admin import admin_bp
+    from backend.routes.exam.exam_registration import exam_registration_bp
+
     
 
     app.register_blueprint(auth_bp, url_prefix='/api/auth')
@@ -140,6 +136,11 @@ def create_app():
     app.register_blueprint(exam_answer_bp, url_prefix='/api/exam_answer')
     app.register_blueprint(media_upload_bp, url_prefix='/api/media_upload')
     app.register_blueprint(health_bp)
+    app.register_blueprint(exam_question_delivery_bp, url_prefix='/api/exam_question_delivery')
+    app.register_blueprint(proctoring_bp, url_prefix='/api/proctoring')
+    app.register_blueprint(admin_bp, url_prefix='/api/admin')
+    app.register_blueprint(exam_registration_bp)
+
     
     delete_expired_refresh_tokens(app.mongo)
 

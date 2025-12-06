@@ -71,3 +71,45 @@ def portal_dashboard():
     except Exception as e:
         current_app.logger.exception('Portal dahsboard error')
         return jsonify({'error': 'Failed to fecth dahsboards'})
+
+
+@exam_portal_bp.route('/proctor_dashboard/<exam_id>', methods=['GET'])
+@token_required
+def proctor_dashboard(exam_id):
+    """
+    Live proctor view.
+    """
+    try:
+        db = current_app.mongo.db
+        exam = db.exams.find_one({'_id': ObjectId(exam_id)})
+        if not exam:
+            return jsonify({'error': 'Exam not found'}), 404
+            
+        # Permission check: owner or examiner
+        if str(g.current_user['_id']) not in [str(exam['owner_id'])] + [str(x) for x in exam.get('invited_examiners', [])]:
+            return jsonify({'error': 'Unauthorized'}), 403
+
+        # Fetch active sessions
+        sessions = list(db.exam_sessions.find({
+            'exam_id': ObjectId(exam_id),
+            'status': 'in_progress'
+        }))
+        
+        active_students = []
+        for s in sessions:
+             user = db.users.find_one({'_id': s['user_id']})
+             active_students.append({
+                 'session_id': str(s['_id']),
+                 'student_name': user.get('name') if user else 'Unknown',
+                 'started_at': s.get('started_at'),
+                 'violation_count': s.get('violation_count', 0)
+             })
+             
+        return jsonify({
+            'exam_title': exam.get('title'),
+            'active_sessions': active_students,
+            'total_active': len(active_students)
+        }), 200
+    except Exception as e:
+        current_app.logger.exception("proctor_dashboard error")
+        return jsonify({'error': str(e)}), 500
