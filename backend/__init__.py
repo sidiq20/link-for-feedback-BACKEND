@@ -23,9 +23,20 @@ REDIS_URL = os.getenv("REDIS_URL")
 
 def create_app():
     app = Flask(__name__)
-    CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+    
+    # Enhanced CORS configuration
+    CORS(app, 
+         resources={r"/*": {
+             "origins": "*",
+             "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+             "allow_headers": ["Content-Type", "Authorization"],
+             "expose_headers": ["Content-Type", "Authorization"],
+             "supports_credentials": True,
+             "max_age": 3600
+         }})
+    
     app.config['CORS_ALLOW_HEADERS'] = ["Content-Type", "Authorization"]
-    app.config['CORS_ALLOW_METHODS'] = ["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    app.config['CORS_ALLOW_METHODS'] = ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"]
 
 
     

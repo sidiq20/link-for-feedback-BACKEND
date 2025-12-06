@@ -79,6 +79,50 @@ def get_public_messages(slug):
             "description": link.get("description")
         }
     }), 200
+
+@anonymous_bp.route("/link/<link_id>", methods=["GET"])
+@jwt_required
+def get_link_messages(link_id):
+    """Get all messages for a specific anonymous link"""
+    try:
+        link = ANONYMOUSLINK.find_by_id(link_id)
+        if not link:
+            return jsonify({"error": "Link not found"}), 404
+        
+        # Verify ownership
+        if str(link["owner_id"]) != request.user_id:
+            return jsonify({"error": "Access denied"}), 403
+        
+        # Get pagination parameters
+        page = max(int(request.args.get("page", 1)), 1)
+        per_page = min(int(request.args.get("per_page", 20)), 100)
+        
+        # Fetch messages for this link
+        messages = ANONYMOUS.find_by_link(
+            ObjectId(link_id),
+            limit=per_page,
+            skip=(page - 1) * per_page,
+            sort_order=-1
+        )
+        
+        # Get total count
+        total = ANONYMOUS._collection().count_documents({"anonymous_link_id": ObjectId(link_id)})
+        
+        return jsonify({
+            "messages": [ANONYMOUS.to_dict(m) for m in messages],
+            "pagination": {
+                "page": page,
+                "per_page": per_page,
+                "total": total,
+                "pages": (total + per_page - 1) // per_page,
+                "has_prev": page > 1,
+                "has_next": page * per_page < total
+            }
+        }), 200
+        
+    except Exception as e:
+        logger.exception(f"Get link messages error: {e}")
+        return jsonify({"error": "Failed to get messages"}), 500
     
 @anonymous_bp.route("/list", methods=["GET"])
 @jwt_required
